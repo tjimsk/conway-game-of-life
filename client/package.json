@@ -1,0 +1,8 @@
+{
+  "name": "conway-client",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/tjimsk/conway-game-of-life.git",
+  "author": "tjimsk",
+  "license": "MIT"
+}
