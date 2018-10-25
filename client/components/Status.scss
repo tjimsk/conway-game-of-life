@@ -1,0 +1,22 @@
+.status {
+	background-color: rgba(100,100,100,0.75);
+	bottom: 0;
+	color: white;
+	cursor: default;
+	font-weight: lighter;
+	left: 0;
+	padding: 4px;
+	position: absolute;
+
+	.generation, .readyState, .dataSizeReceived {
+		padding: 4px 12px;
+	}
+
+	.readyState {
+
+	}
+
+	.dataSizeReceived {
+
+	}
+}

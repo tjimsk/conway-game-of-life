@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 var (
@@ -10,19 +11,23 @@ var (
 )
 
 type Grid struct {
-	Width      int                   `json:"width"`
-	Height     int                   `json:"height"`
-	Cells      map[int]map[int]*Cell `json:"-"`
-	Generation int                   `json:"generation"`
-	mu         *sync.Mutex
+	Width       int                   `json:"width"`
+	Height      int                   `json:"height"`
+	Cells       map[int]map[int]*Cell `json:"-"`
+	AutoEvo     bool                  `json:"autoEvo"`
+	EvoInterval time.Duration         `json:"evoInterval"`
+	Generation  int                   `json:"generation"`
+	mu          *sync.Mutex
 }
 
-func NewGrid(w, h int) *Grid {
+func NewGrid(w int, h int, autoEvo bool, evoInterval time.Duration) *Grid {
 	g := &Grid{
-		Width:  w,
-		Height: h,
-		Cells:  map[int]map[int]*Cell{},
-		mu:     &sync.Mutex{},
+		Width:       w,
+		Height:      h,
+		Cells:       map[int]map[int]*Cell{},
+		AutoEvo:     autoEvo,
+		EvoInterval: evoInterval,
+		mu:          &sync.Mutex{},
 	}
 
 	// instantiate every cell
@@ -38,7 +43,7 @@ func NewGrid(w, h int) *Grid {
 }
 
 func (g *Grid) seed() {
-	player0 := NewUser("player0")
+	player0 := NewUser(nil) // create a seed user since it needs a random color
 
 	coordinates := []Coordinate{
 		// blinker
@@ -62,7 +67,17 @@ func (g *Grid) seed() {
 }
 
 func (g *Grid) cell(x, y int) *Cell {
-	return g.Cells[x][y]
+	_, ok := g.Cells[x]
+	if !ok {
+		return nil
+	}
+
+	cell, ok := g.Cells[x][y]
+	if !ok {
+		return nil
+	}
+
+	return cell
 }
 
 func (g *Grid) cellAtCoordinate(c Coordinate) *Cell {
@@ -74,7 +89,7 @@ func (g *Grid) cellsToEvolve() (cells []*Cell) {
 	activeCells := g.activeCells()
 
 	for _, c := range activeCells {
-		coordinates := append(c.adjacentCoordinates(), Coordinate{c.X, c.Y})
+		coordinates := append(g.adjacentCoordinates(c), Coordinate{c.X, c.Y})
 
 		for _, coordinate := range coordinates {
 			k := coordinate.String()
@@ -101,11 +116,32 @@ func (g *Grid) activeCells() (activeCells []*Cell) {
 	return activeCells
 }
 
+func (g *Grid) adjacentCoordinates(c *Cell) []Coordinate {
+	coordinates := []Coordinate{}
+
+	if c == nil {
+		return coordinates
+	}
+
+	coordinates = append(coordinates,
+		Coordinate{c.X - 1, c.Y + 1},
+		Coordinate{c.X - 1, c.Y},
+		Coordinate{c.X - 1, c.Y - 1},
+		Coordinate{c.X, c.Y - 1},
+		Coordinate{c.X, c.Y + 1},
+		Coordinate{c.X + 1, c.Y - 1},
+		Coordinate{c.X + 1, c.Y},
+		Coordinate{c.X + 1, c.Y + 1},
+	)
+
+	return coordinates
+}
+
 func (g *Grid) activeAdjacentCells(c *Cell) (adjCells []*Cell) {
-	for _, coordinate := range c.adjacentCoordinates() {
+	for _, coordinate := range g.adjacentCoordinates(c) {
 		adjCell := g.cellAtCoordinate(coordinate)
 
-		if adjCell.Active {
+		if adjCell != nil && adjCell.Active {
 			adjCells = append(adjCells, adjCell)
 		}
 	}
@@ -113,12 +149,50 @@ func (g *Grid) activeAdjacentCells(c *Cell) (adjCells []*Cell) {
 	return adjCells
 }
 
-func (g *Grid) nextGeneration() (gu GridUpdate) {
+func (g *Grid) bumpGeneration() {
+	g.Generation++
+
+	for _, row := range g.Cells {
+		for _, c := range row {
+			c.Generation++
+		}
+	}
+}
+
+func (g *Grid) ActivateCells(msgCells map[string]Cell, u *User) (cells []*Cell) {
+	for _, _c := range msgCells {
+		c := g.cell(_c.X, _c.Y)
+
+		if c == nil {
+			continue
+		}
+
+		c.Active = _c.Active
+		if c.Active {
+			// add user to cell's agents and set cell's color to user's
+			c.Agents = map[string]*User{}
+			c.Agents[u.Name] = u
+			c.Color = u.Color
+		}
+
+		cells = append(cells, c)
+	}
+
+	return cells
+}
+
+func (g *Grid) Evolve() (gu GridUpdate) {
 	updatedCells := []*Cell{}
 	cells := g.cellsToEvolve()
 
+	g.bumpGeneration()
+
 	// evaluate every cell's next evolution
 	for _, c := range cells {
+		if c == nil {
+			continue
+		}
+
 		adjCells := g.activeAdjacentCells(c)
 		activeCount := len(adjCells)
 
@@ -159,16 +233,7 @@ func (g *Grid) nextGeneration() (gu GridUpdate) {
 		updatedCells[i] = c
 	}
 
-	g.Generation++
-
-	return g.updateFromCells(updatedCells)
-}
-
-type CellUpdate struct {
-	X      int    `json:"x"`
-	Y      int    `json:"y"`
-	Active bool   `json:"a"`
-	Color  *Color `json:"c"`
+	return g.UpdateFromCells(updatedCells)
 }
 
 type GridUpdate struct {
@@ -176,15 +241,16 @@ type GridUpdate struct {
 	Cells      []CellUpdate `json:"cells"`
 }
 
-func (g *Grid) updateFromCells(updatedCells []*Cell) (gu GridUpdate) {
+func (g *Grid) UpdateFromCells(updatedCells []*Cell) (gu GridUpdate) {
 	gu.Generation = g.Generation
 
 	for _, c := range updatedCells {
 		gu.Cells = append(gu.Cells, CellUpdate{
-			X:      c.X,
-			Y:      c.Y,
-			Active: c.Active,
-			Color:  c.Color,
+			X:          c.X,
+			Y:          c.Y,
+			Active:     c.Active,
+			Color:      c.Color,
+			Generation: c.Generation,
 		})
 	}
 

@@ -1,7 +1,28 @@
 .grid {
 	align-self: stretch;
-	border: 1px solid rgb(100,100,100);
+	background-color: transparent;
 	flex-grow: 1;
-	margin: 8px;
-	padding: 8px;
+	height: 100%;
+	margin: 0px;
+	overflow: scroll;
+	padding: 0px;
+	position: relative;
+	width: 100%;
+
+	.scrollView {
+		background-color: transparent;
+		position: relative;
+	}
+}
+
+.cell {
+	$cell-width: 16px;
+
+	background-color: rgb(240,240,240);
+	border: 0.5px solid white;
+	height: $cell-width;
+	margin: 0px;
+	padding: 0px;
+	position: absolute;
+	width: $cell-width;
 }

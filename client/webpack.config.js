@@ -2,7 +2,6 @@ const path = require("path")
 const ExtractTextPlugin = require("extract-text-webpack-plugin")
 const HtmlPlugin = require("html-webpack-plugin")
 const CleanPlugin = require("clean-webpack-plugin")
-const CopyPlugin = require("copy-webpack-plugin")
 
 var config = {
     context: __dirname,
@@ -11,7 +10,7 @@ var config = {
     output: {
         filename: "bundle.js",
         path: path.resolve(__dirname, "dist"),
-        publicPath: "/"
+        publicPath: "/dist"
     },
     resolve: {
         alias: {Components: path.resolve(__dirname, "components"), Util: path.resolve(__dirname, "util")},
@@ -26,7 +25,7 @@ var config = {
         historyApiFallback: true,
         port: 9200,
         proxy: {
-            "/websocket": {changeOrigin: true, target: "https://localhost:8080", secure: false}
+            "/websocket": {changeOrigin: true, target: "ws://localhost:8080", secure: false, ws:true}
         }
     },
     module: {
@@ -57,9 +56,7 @@ var config = {
     },
     plugins: [
         new ExtractTextPlugin({filename: "bundle.css"}),
-        new HtmlPlugin({filename: "./index.html", favicon: path.resolve(__dirname, "assets/favicon.ico"), template: path.resolve(__dirname, "templates/index.html")}),
-        new CopyPlugin([{from: "robots.txt"}, {from: "error.html"}], {context: path.resolve(__dirname, "assets")}
-        )
+        new HtmlPlugin({filename: "./index.html", favicon: path.resolve(__dirname, "assets/favicon.ico"), template: path.resolve(__dirname, "templates/index.html")})
     ]
 }
 

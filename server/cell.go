@@ -7,10 +7,10 @@ import (
 type Cell struct {
 	X          int              `json:"x"`
 	Y          int              `json:"y"`
-	Generation int              `json:"-"`
+	Generation int              `json:"g"`
 	Agents     map[string]*User `json:"-"`
-	Active     bool             `json:"active"`
-	Color      *Color           `json:"color"`
+	Active     bool             `json:"a"`
+	Color      *Color           `json:"c"`
 }
 
 func NewCell(x int, y int) *Cell {
@@ -44,23 +44,6 @@ func (c *Cell) AverageColor() *Color {
 	return c.Color
 }
 
-func (c *Cell) adjacentCoordinates() []Coordinate {
-	coordinates := []Coordinate{}
-
-	coordinates = append(coordinates,
-		Coordinate{c.X - 1, c.Y + 1},
-		Coordinate{c.X - 1, c.Y},
-		Coordinate{c.X - 1, c.Y - 1},
-		Coordinate{c.X, c.Y - 1},
-		Coordinate{c.X, c.Y + 1},
-		Coordinate{c.X + 1, c.Y - 1},
-		Coordinate{c.X + 1, c.Y},
-		Coordinate{c.X + 1, c.Y + 1},
-	)
-
-	return coordinates
-}
-
 func (c *Cell) appendAdjacentCellsAgents(adjCells []*Cell) {
 	for _, adjCell := range adjCells {
 		for _, agent := range adjCell.Agents {
@@ -76,4 +59,12 @@ type Coordinate struct {
 
 func (c Coordinate) String() string {
 	return fmt.Sprintf(`%v,%v`, c.X, c.Y)
+}
+
+type CellUpdate struct {
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	Active     bool   `json:"a"`
+	Color      *Color `json:"c"`
+	Generation int    `json:"g"`
 }

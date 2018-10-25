@@ -1,8 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
+	"time"
 )
+
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
 
 type Color struct {
 	R int `json:"r"`
@@ -22,4 +28,8 @@ func NewRandomColor() *Color {
 	)
 
 	return NewColor(R, G, B)
+}
+
+func (c *Color) String() string {
+	return fmt.Sprintf(`(%v, %v, %v)`, c.R, c.G, c.B)
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -11,132 +13,182 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	DefaultPort        = ":8080"
+	DefaultAutoEvo     = true
+	DefaultEvoInterval = 500 * time.Millisecond
+	DefaultGridWidth   = 120
+	DefaultGridHeight  = 70
+)
+
+const (
+	chanTimeout = 2 * time.Second
+)
+
 var (
-	autoEvoInterval = 5 * time.Second    // use mutex
-	autoEvoEnabled  = true               // use mutex
-	grid            *Grid                // use mutex
-	events          = []*Event{}         // use mutex
-	users           = map[string]*User{} // use mutex
-	mu              = &sync.Mutex{}
-	upgrader        = websocket.Upgrader{
-		Subprotocols: []string{"Sec-Websocket-Protocol"},
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+	_  fmt.Stringer
+	_  log.Logger
+	wd string
+
+	grid     *Grid
+	logs     = []*Message{}
+	users    = map[string]*User{}
+	mu       = &sync.Mutex{}
+	upgrader = websocket.Upgrader{
+		EnableCompression: true,
+		Subprotocols:      []string{"Sec-WebSocket-Protocol", "echo-protocol"},
+		CheckOrigin:       func(r *http.Request) bool { return true },
 	}
 )
 
 func main() {
-	viper.SetDefault("port", ":8080")
-	viper.BindEnv("port")
-	viper.SetDefault("height", 360)
-	viper.BindEnv("height")
-	viper.SetDefault("width", 600)
-	viper.BindEnv("width")
+	wd, _ = os.Getwd()
 
+	parseEnv()
+	initGrid()
+
+	go startEvolve(grid)
+
+	http.HandleFunc("/", HandleRoot)
+	http.HandleFunc("/dist/", HandleAssets)
 	http.HandleFunc("/websocket", HandleWebSocket)
+	log.Println("listening on", viper.GetString("port"))
+	log.Fatal(http.ListenAndServe(viper.GetString("port"), nil))
+}
 
-	grid = NewGrid(viper.GetInt("width"), viper.GetInt("height"))
+func parseEnv() {
+	viper.SetDefault("port", DefaultPort)
+	viper.SetDefault("height", DefaultGridHeight)
+	viper.SetDefault("width", DefaultGridWidth)
+
+	viper.BindEnv("port")
+	viper.BindEnv("height")
+	viper.BindEnv("width")
+}
+
+func initGrid() {
+	grid = NewGrid(viper.GetInt("width"), viper.GetInt("height"), DefaultAutoEvo, DefaultEvoInterval)
 	grid.seed()
 
-	go automaticUpdateGrid(grid)
-
-	go broadcastEvents()
-
-	log.Println("listening on", viper.GetString("port"))
 	log.Printf("grid is %vx%v\n", viper.GetInt("width"), viper.GetInt("height"))
-
-	http.ListenAndServe(viper.GetString("port"), nil)
 }
 
-func automaticUpdateGrid(g *Grid) {
+func startEvolve(g *Grid) {
 	for {
-		update := g.nextGeneration()
+		// start := time.Now()
+		gu := g.Evolve()
+		// end := time.Now()
+		// diff := end.Sub(start)
 
-		log.Printf("Updating %v cells after %v\n", len(update.Cells), autoEvoInterval)
+		// log.Printf("\tGENERATION=%v;LIVE=%v;UPDATES=%v;TIME=%v;INTERVAL=%v\n",
+		// g.Generation, len(g.activeCells()), len(gu.Cells), diff, g.EvoInterval)
 
-		// notify users
-		for _, u := range users {
-			u.gridChan <- update
-		}
+		broadcastGridUpdate(gu, users)
 
-		time.Sleep(autoEvoInterval)
+		time.Sleep(g.EvoInterval)
 	}
 }
 
-func broadcastEvents() {
-	for {
-
+func broadcastGridUpdate(gu GridUpdate, _users map[string]*User) {
+	for _, u := range _users {
+		go func(_u *User) {
+			select {
+			case _u.gridUpdateChan <- gu:
+			case <-time.After(chanTimeout):
+				UnregisterUser(_u.Name)
+				log.Printf("connection timeout for user %v; %v users remaining\n", _u.Name, len(users))
+				_u.endChan <- true
+			}
+		}(u)
 	}
+}
+
+func HandleRoot(w http.ResponseWriter, r *http.Request) {
+	log.Printf("HandleRoot: %v %v\n", r.Method, r.URL.Path)
+
+	p := path.Join(wd, "../client/dist/index.html")
+
+	http.ServeFile(w, r, p)
+}
+
+func HandleAssets(w http.ResponseWriter, r *http.Request) {
+	log.Printf("HandleAssets: %v %v\n", r.Method, r.URL.Path)
+
+	p := path.Join(wd, "../client", r.URL.Path)
+
+	http.ServeFile(w, r, p)
 }
 
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
-	log.Printf("HandleWebSocket:%v:%v", r.Method, r.URL.Path)
+	log.Printf("HandleWebSocket:%v:%v:%v", r.Method, r.URL.Path, websocket.Subprotocols(r))
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("upgrade:", err)
+		log.Print("connection upgrade error:", err)
 		return
 	}
 
+	// experimental feature in github.com/gorilla/websocket
+	// may impact performance
+	// TODO: benchmarks
+	conn.EnableWriteCompression(true)
+
 	defer conn.Close()
 
-	// create user
-	u := NewUser(fmt.Sprintf("player%v", len(users)+1))
-	users[u.Name] = u
+	// create user or resume existing user
+	u := NewUser(conn)
+	RegisterUser(u)
 
-	// send user
-	conn.WriteJSON(Message{
-		Type:    OUTBOUND_MESSAGE_TYPE_USER,
-		Content: u,
-	})
-
-	// send grid
-	conn.WriteJSON(Message{
-		Type:    OUTBOUND_MESSAGE_TYPE_GRID,
-		Content: grid,
-	})
-
-	// send active cells
-	conn.WriteJSON(Message{
-		Type:    OUTBOUND_MESSAGE_TYPE_GRID_ACTIVE_CELLS,
-		Content: grid.activeCells(),
-	})
-
-	// send periodic cell updates
-	go func() {
-		for {
-			updates := <-u.gridChan
-
-			conn.WriteJSON(Message{
-				Type:    OUTBOUND_MESSAGE_TYPE_GRID_UPDATE,
-				Content: updates,
-			})
-		}
-	}()
-
-	// send events updates
-	go func() {
-		for <-u.eventChan {
-			conn.WriteJSON(Message{
-				Type:    OUTBOUND_MESSAGE_TYPE_EVENT_UPDATE,
-				Content: events[len(events)-1],
-			})
-		}
-	}()
-
-	for {
-		// mt, message, err := conn.ReadMessage()
-		// if err != nil {
-		// 	// log.Println("read:", err)
-		// 	break
-		// }
-		// // log.Printf("recv: %s", message)
-		// err = conn.WriteMessage(mt, message)
-		// if err != nil {
-		// 	// log.Println("write:", err)
-		// 	break
-		// }
-		time.Sleep(100 * time.Millisecond)
+	// send user to client
+	if err := u.SendUserDetails(); err != nil {
+		log.Println("error sending user details:", err)
+		return
 	}
+
+	// send grid to client
+	if err := u.SendGridDetails(grid); err != nil {
+		log.Println("error sending grid details:", err)
+		return
+	}
+
+	// send grid active cells to websocket client
+	if err := u.SendGridActiveCells(grid); err != nil {
+		log.Println("error sending grid active cells:", err)
+		return
+	}
+
+	// receive and send grid updates loop
+	go func(_u *User) {
+		for {
+			if err := u.SendGridUpdate(<-u.gridUpdateChan); err != nil {
+				log.Printf("error writing message json: %v [closing connection user:%v]", err, u.Name)
+				u.endChan <- true
+				break
+			}
+		}
+	}(u)
+
+	// receive cell updates from websocket client
+	go func(_u *User, g *Grid) {
+		for {
+			msg := ActivateCellsMessage{}
+			if err := conn.ReadJSON(&msg); err != nil {
+				log.Printf("error reading message json: %v [closing connection user:%v]", err, u.Name)
+				u.endChan <- true
+				break
+			}
+
+			cellsMap := map[string]Cell{}
+			for _, c := range msg.Cells {
+				k := fmt.Sprintf(`%v;%v`, c.X, c.Y)
+				cellsMap[k] = c
+			}
+
+			cells := g.ActivateCells(cellsMap, _u)
+
+			broadcastGridUpdate(g.UpdateFromCells(cells), users)
+		}
+	}(u, grid)
+
+	<-u.endChan
 }
