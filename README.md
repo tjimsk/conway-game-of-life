@@ -9,6 +9,8 @@
 
 ## Description
 
+A multiplayer implementation of Conway's Game of Life with a Go backend and a React frontend.  Communication uses Websocket.
+
 ### Server
 
 The server is written in Go.  It is made of 3 endpoints: root (/), assets (/dist), websocket (/websocket).  Some parameters are read and set from environment variables, such as PORT, HEIGHT, WIDTH.  Each Websocket connection is tied to a user who is assigned a random color on creation.  Go channels are used to concurrently pass grid evolution updates to each registered user.  They are also used in order to transmit updates from a single client message to every registered users' websocket connection.
