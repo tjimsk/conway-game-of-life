@@ -23,7 +23,7 @@ The Toolbox component allows users to select a drawing tool to place on the grid
 
 ### Deployment
 
-The app is deployed on a droplet and should be reachable at http://178.128.221.183.
+The app is deployed on a single core droplet with 1GB RAM and should be accessible at http://178.128.221.183.
 
 The Dockerfile can be pulled from dockerhub:
 
