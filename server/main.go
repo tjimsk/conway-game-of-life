@@ -28,7 +28,6 @@ var (
 	_        log.Logger
 	wd       string
 	grid     *Grid
-	users    = map[string]User{}
 	mu       = &sync.Mutex{}
 	upgrader = websocket.Upgrader{
 		EnableCompression: true,
@@ -67,7 +66,7 @@ func main() {
 		for {
 			e := <-grid.evoChan
 
-			for _, u := range users {
+			for _, u := range grid.users {
 				go func(u User) {
 					// time out and clear connection if channel data is not received
 					select {
@@ -84,7 +83,7 @@ func main() {
 		for {
 			cells := <-grid.updateChan
 
-			for _, u := range users {
+			for _, u := range grid.users {
 				go func(u User) {
 					// time out and clear connection if channel data is not received
 					select {
@@ -133,8 +132,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	// create user or resume existing user
-	u := NewUser(conn)
-	RegisterUser(u)
+	u := grid.NewUser(conn)
 
 	if err := WriteUserDetails(conn, u); err != nil {
 		log.Println("WriteUserDetails:", err)
@@ -214,7 +212,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			select {
 			case grid.updateChan <- cells:
 			case <-time.After(chanTimeout):
-				UnregisterUser(u.Name)
+				grid.UnregisterUser(u.Name)
 				log.Println("grid.updateChan timeout")
 				u.closeChan <- true
 			}
