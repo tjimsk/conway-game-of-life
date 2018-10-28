@@ -156,6 +156,12 @@ class Toolbox extends React.Component {
 		}
 	}
 
+	selectedToolName() {
+		var tool = this.tools[this.props.selectedToolIndex]
+
+		return tool.name
+	}
+
 	getCellsFromSelectedTool(x, y) {
 		var tool = this.tools[this.props.selectedToolIndex]
 

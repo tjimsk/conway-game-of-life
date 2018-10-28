@@ -29,11 +29,13 @@ class App extends React.Component {
 					selectedToolIndex={this.state.selectedToolIndex}
 					onClickTool={this.onClickTool.bind(this)} />}
 
-				<Grid grid={this.state.grid}
+				<Grid 
+					grid={this.state.grid}
 					user={this.state.user}
 					cells={this.state.cells}
 					onClickCell={this.onClickCell.bind(this)}
 					receivedActiveCells={this.state.receivedActiveCells}
+					cellRefs={this.cellRefs}
 					setActiveColorFunc={this.setActiveColorFunc} />
 
 				<Status
@@ -47,6 +49,7 @@ class App extends React.Component {
 		super(props)
 		this.state = this.getInitialState()
 		this.setActiveColorFunc = {}
+		this.cellRefs = {}
 		this.createWebsocketConnection()
 	}
 
@@ -93,7 +96,6 @@ class App extends React.Component {
 
         var msg = JSON.parse(e.data)
 	    var size = e.data.length / 1000
-        // console.log("WebSocket message:", msg)
 
         switch(msg.t) {
     	case MESSAGE_TYPE_USER_DETAILS:
@@ -119,8 +121,10 @@ class App extends React.Component {
 		// create `cells` object
 		// all cells inactive with null color
 		var cells = {}
-		for (var i = 1; i <= g.width; i++) {
-			for (var j = 1; j <= g.height; j++) {
+		var width = g.w 
+		var height = g.h
+		for (var i = 1; i <= width; i++) {
+			for (var j = 1; j <= height; j++) {
 				var k = `${i};${j}`
 				cells[k] = {x: i, y: j, k: k}
 			}
@@ -140,15 +144,19 @@ class App extends React.Component {
 
 	applyGridUpdates(msg, size) {
 		var g = Object.assign({}, this.state.grid)
-		g.generation = msg.c.generation
+		g.generation = msg.c.g
 
 		this.setState({
 			grid: g,
 			dataSizeReceived: size
-		}, this.updateCells.bind(this, msg.c.cells))
+		}, this.updateCells.bind(this, msg.c.c))
 	}
 
 	updateCells(cells) {
+		if (cells == null) {
+			return
+		}
+
 		for (var i = 0; i < cells.length; i++) {
 			var c = cells[i]
 			var k = `${c.x};${c.y}`
@@ -169,20 +177,31 @@ class App extends React.Component {
 	onClickCell(c) {
 		var msg = {
 			t: MESSAGE_TYPE_UPDATE_CELLS,
-			c: [],
-			u: this.state.user
+			c: []
 		}
 
 		msg.c = this.toolbox.getCellsFromSelectedTool(c.x, c.y)
 
 		var cellsArr = []
-		Object.keys(msg.c).map((k) => {
-			var c = msg.c[k]
-			c.a = true
-			c.c = this.state.user.color
 
-			cellsArr.push(c)
-		})
+		if (this.toolbox.selectedToolName() === "Point") {
+			Object.keys(msg.c).map((i) => {
+				var c = msg.c[i]
+				var k = `${c.x};${c.y}` 
+				c.a = !this.cellRefs[k].state.active
+				c.c = c.a ? this.state.user.c : {}
+
+				cellsArr.push(c)
+			})
+		} else {
+			Object.keys(msg.c).map((k) => {
+				var c = msg.c[k]
+				c.a = true
+				c.c = this.state.user.c
+
+				cellsArr.push(c)
+			})
+		}
 
 		this.updateCells(cellsArr)
 

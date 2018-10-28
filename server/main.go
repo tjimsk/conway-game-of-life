@@ -15,24 +15,20 @@ import (
 
 const (
 	DefaultPort        = ":8080"
-	DefaultAutoEvo     = true
-	DefaultEvoInterval = 500 * time.Millisecond
+	DefaultEvoInterval = 400
 	DefaultGridWidth   = 120
 	DefaultGridHeight  = 70
-)
-
-const (
-	chanTimeout = 2 * time.Second
+	DefaultSeedGrid    = true
+	DefaultLogEvoTime  = false
+	chanTimeout        = 2 * time.Second
 )
 
 var (
-	_  fmt.Stringer
-	_  log.Logger
-	wd string
-
+	_        fmt.Stringer
+	_        log.Logger
+	wd       string
 	grid     *Grid
-	logs     = []*Message{}
-	users    = map[string]*User{}
+	users    = map[string]User{}
 	mu       = &sync.Mutex{}
 	upgrader = websocket.Upgrader{
 		EnableCompression: true,
@@ -44,63 +40,69 @@ var (
 func main() {
 	wd, _ = os.Getwd()
 
-	parseEnv()
-	initGrid()
-
-	go startEvolve(grid)
-
-	http.HandleFunc("/", HandleRoot)
-	http.HandleFunc("/dist/", HandleAssets)
-	http.HandleFunc("/websocket", HandleWebSocket)
-	log.Println("listening on", viper.GetString("port"))
-	log.Fatal(http.ListenAndServe(viper.GetString("port"), nil))
-}
-
-func parseEnv() {
+	// set default environment variables
+	viper.SetDefault("evoInterval", DefaultEvoInterval)
+	viper.SetDefault("seedGrid", DefaultSeedGrid)
 	viper.SetDefault("port", DefaultPort)
 	viper.SetDefault("height", DefaultGridHeight)
 	viper.SetDefault("width", DefaultGridWidth)
 
+	// bind environment variables
+	viper.BindEnv("evoInterval")
+	viper.BindEnv("seedGrid")
 	viper.BindEnv("port")
 	viper.BindEnv("height")
 	viper.BindEnv("width")
-}
 
-func initGrid() {
-	grid = NewGrid(viper.GetInt("width"), viper.GetInt("height"), DefaultAutoEvo, DefaultEvoInterval)
-	grid.seed()
-
-	log.Printf("grid is %vx%v\n", viper.GetInt("width"), viper.GetInt("height"))
-}
-
-func startEvolve(g *Grid) {
-	for {
-		// start := time.Now()
-		gu := g.Evolve()
-		// end := time.Now()
-		// diff := end.Sub(start)
-
-		// log.Printf("\tGENERATION=%v;LIVE=%v;UPDATES=%v;TIME=%v;INTERVAL=%v\n",
-		// g.Generation, len(g.activeCells()), len(gu.Cells), diff, g.EvoInterval)
-
-		broadcastGridUpdate(gu, users)
-
-		time.Sleep(g.EvoInterval)
+	// initialize grid
+	grid = NewGrid(viper.GetInt("width"), viper.GetInt("height"))
+	if viper.GetBool("seedGrid") {
+		grid.seed()
 	}
-}
 
-func broadcastGridUpdate(gu GridUpdate, _users map[string]*User) {
-	for _, u := range _users {
-		go func(_u *User) {
-			select {
-			case _u.gridUpdateChan <- gu:
-			case <-time.After(chanTimeout):
-				UnregisterUser(_u.Name)
-				log.Printf("connection timeout for user %v; %v users remaining\n", _u.Name, len(users))
-				_u.endChan <- true
+	go grid.StartEvolutions()
+
+	// listen on evoChan for evolution signals
+	go func() {
+		for {
+			e := <-grid.evoChan
+
+			for _, u := range users {
+				go func(u User) {
+					// time out and clear connection if channel data is not received
+					select {
+					case u.evoChan <- e:
+					case <-time.After(chanTimeout):
+					}
+				}(u)
 			}
-		}(u)
-	}
+		}
+	}()
+
+	// listen on updateChan for cells update signals
+	go func() {
+		for {
+			cells := <-grid.updateChan
+
+			for _, u := range users {
+				go func(u User) {
+					// time out and clear connection if channel data is not received
+					select {
+					case u.updateChan <- cells:
+					case <-time.After(chanTimeout):
+					}
+				}(u)
+			}
+		}
+	}()
+
+	// listen and serve http
+	http.HandleFunc("/", HandleRoot)
+	http.HandleFunc("/dist/", HandleAssets)
+	http.HandleFunc("/websocket", HandleWebSocket)
+
+	log.Println("listening on", viper.GetString("port"))
+	log.Fatal(http.ListenAndServe(viper.GetString("port"), nil))
 }
 
 func HandleRoot(w http.ResponseWriter, r *http.Request) {
@@ -124,71 +126,100 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("connection upgrade error:", err)
+		log.Print("upgrader.Upgrade:", err)
 		return
 	}
-
-	// experimental feature in github.com/gorilla/websocket
-	// may impact performance
-	// TODO: benchmarks
 	conn.EnableWriteCompression(true)
-
 	defer conn.Close()
 
 	// create user or resume existing user
 	u := NewUser(conn)
 	RegisterUser(u)
 
-	// send user to client
-	if err := u.SendUserDetails(); err != nil {
-		log.Println("error sending user details:", err)
+	if err := WriteUserDetails(conn, u); err != nil {
+		log.Println("WriteUserDetails:", err)
 		return
 	}
 
-	// send grid to client
-	if err := u.SendGridDetails(grid); err != nil {
-		log.Println("error sending grid details:", err)
+	if err := WriteGridDetails(conn, grid); err != nil {
+		log.Println("WriteGridDetails:", err)
 		return
 	}
 
-	// send grid active cells to websocket client
-	if err := u.SendGridActiveCells(grid); err != nil {
-		log.Println("error sending grid active cells:", err)
+	if err := WriteGridActiveCells(conn, grid.activeCells()); err != nil {
+		log.Println("WriteGridActiveCells:", err)
 		return
 	}
 
-	// receive and send grid updates loop
-	go func(_u *User) {
+	// receive grid evolution signals
+	// write grid evolution updates to websocket
+	go func(u User) {
 		for {
-			if err := u.SendGridUpdate(<-u.gridUpdateChan); err != nil {
-				log.Printf("error writing message json: %v [closing connection user:%v]", err, u.Name)
-				u.endChan <- true
+			evo := <-u.evoChan
+
+			if err := WriteEvolution(conn, evo); err != nil {
+				log.Println("WriteEvolution:", err)
+				u.closeChan <- true
 				break
 			}
 		}
 	}(u)
 
-	// receive cell updates from websocket client
-	go func(_u *User, g *Grid) {
+	// receive grid cells update signals
+	// write grid cell updates to websocket
+	go func(u User) {
 		for {
-			msg := ActivateCellsMessage{}
-			if err := conn.ReadJSON(&msg); err != nil {
-				log.Printf("error reading message json: %v [closing connection user:%v]", err, u.Name)
-				u.endChan <- true
+			cells := <-u.updateChan
+
+			if err := WriteCellsUpdate(conn, cells); err != nil {
+				log.Println("WriteCellsUpdate:", err)
+				u.closeChan <- true
+				break
+			}
+		}
+	}(u)
+
+	// receive grid cells update websocket messages
+	// send cells update signal to grid
+	go func(u User) {
+		for {
+			msg, err := ReadCellsUpdate(conn)
+			if err != nil {
+				log.Println("ReadCellsUpdate:", err)
+				u.closeChan <- true
 				break
 			}
 
-			cellsMap := map[string]Cell{}
-			for _, c := range msg.Cells {
-				k := fmt.Sprintf(`%v;%v`, c.X, c.Y)
-				cellsMap[k] = c
+			// apply received cells update
+			cells := []*Cell{}
+			for _, mc := range msg.Cells {
+				c, err := grid.CellAtPoint(Point{mc.X, mc.Y})
+				if err != nil {
+					continue
+				}
+
+				c.active = mc.Active
+
+				if mc.Active {
+					c.color = u.Color
+				} else {
+					c.color = Color{}
+				}
+
+				c.Flush()
+				cells = append(cells, c)
 			}
 
-			cells := g.ActivateCells(cellsMap, _u)
-
-			broadcastGridUpdate(g.UpdateFromCells(cells), users)
+			// send cells update signal to grid
+			select {
+			case grid.updateChan <- cells:
+			case <-time.After(chanTimeout):
+				UnregisterUser(u.Name)
+				log.Println("grid.updateChan timeout")
+				u.closeChan <- true
+			}
 		}
-	}(u, grid)
+	}(u)
 
-	<-u.endChan
+	<-u.closeChan
 }

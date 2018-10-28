@@ -14,15 +14,3 @@
 		position: relative;
 	}
 }
-
-.cell {
-	$cell-width: 16px;
-
-	background-color: rgb(240,240,240);
-	border: 0.5px solid white;
-	height: $cell-width;
-	margin: 0px;
-	padding: 0px;
-	position: absolute;
-	width: $cell-width;
-}

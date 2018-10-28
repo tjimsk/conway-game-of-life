@@ -1,101 +1,95 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"sync"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 var (
-	_ fmt.Stringer
+	_                 fmt.Stringer
+	ErrCellOutOfBound = errors.New("Cell point is out of bounds")
 )
 
 type Grid struct {
-	Width       int                   `json:"width"`
-	Height      int                   `json:"height"`
-	Cells       map[int]map[int]*Cell `json:"-"`
-	AutoEvo     bool                  `json:"autoEvo"`
-	EvoInterval time.Duration         `json:"evoInterval"`
-	Generation  int                   `json:"generation"`
-	mu          *sync.Mutex
+	Generation int `json:"g"`
+	Height     int `json:"h"`
+	Width      int `json:"w"`
+
+	cells      map[int]map[int]*Cell
+	evoChan    chan Evolution
+	updateChan chan []*Cell
 }
 
-func NewGrid(w int, h int, autoEvo bool, evoInterval time.Duration) *Grid {
+func NewGrid(w int, h int) *Grid {
 	g := &Grid{
-		Width:       w,
-		Height:      h,
-		Cells:       map[int]map[int]*Cell{},
-		AutoEvo:     autoEvo,
-		EvoInterval: evoInterval,
-		mu:          &sync.Mutex{},
+		Width:  w,
+		Height: h,
+
+		cells:      map[int]map[int]*Cell{},
+		evoChan:    make(chan Evolution),
+		updateChan: make(chan []*Cell),
 	}
 
-	// instantiate every cell
 	for i := 0; i < w; i++ {
-		g.Cells[i] = map[int]*Cell{}
+		g.cells[i] = map[int]*Cell{}
 
 		for j := 0; j < h; j++ {
-			g.Cells[i][j] = NewCell(i, j)
+			g.cells[i][j] = NewCell(Point{i, j})
 		}
 	}
 
 	return g
 }
 
-func (g *Grid) seed() {
-	player0 := NewUser(nil) // create a seed user since it needs a random color
-
-	coordinates := []Coordinate{
-		// blinker
-		Coordinate{10, 10},
-		Coordinate{11, 10},
-		Coordinate{12, 10},
-		// beacon
-		Coordinate{10, 15},
-		Coordinate{10, 16},
-		Coordinate{11, 15},
-		Coordinate{12, 18},
-		Coordinate{13, 17},
-		Coordinate{13, 18},
-	}
-
-	for _, coordinate := range coordinates {
-		c := grid.cellAtCoordinate(coordinate)
-		c.Agents[player0.Name] = player0
-		c.Active = true
-	}
-}
-
-func (g *Grid) cell(x, y int) *Cell {
-	_, ok := g.Cells[x]
+func (g *Grid) CellAtPoint(p Point) (c *Cell, err error) {
+	_, ok := g.cells[p.X]
 	if !ok {
-		return nil
+		return nil, ErrCellOutOfBound
 	}
 
-	cell, ok := g.Cells[x][y]
+	c, ok = g.cells[p.X][p.Y]
 	if !ok {
-		return nil
+		return nil, ErrCellOutOfBound
 	}
 
-	return cell
+	return c, nil
 }
 
-func (g *Grid) cellAtCoordinate(c Coordinate) *Cell {
-	return g.Cells[c.X][c.Y]
+func (g *Grid) activeCells() (cells []*Cell) {
+	for _, cellRow := range g.cells {
+		for _, c := range cellRow {
+			if c.Active {
+				cells = append(cells, c)
+			}
+		}
+	}
+
+	return cells
 }
 
-func (g *Grid) cellsToEvolve() (cells []*Cell) {
+// An unstable cell is one located in a position adjacent to an active cell.
+// When evolving an entire grid, this function is called first to determine
+// the cells on which to apply conway's 4 rules of evolution.
+func (g *Grid) unstableCells() (cells []*Cell) {
+	aCells := g.activeCells()
 	keys := map[string]bool{}
-	activeCells := g.activeCells()
 
-	for _, c := range activeCells {
-		coordinates := append(g.adjacentCoordinates(c), Coordinate{c.X, c.Y})
+	for _, c := range aCells {
+		p := Point{c.X, c.Y}
+		pts := append(p.Adjacent(), p)
 
-		for _, coordinate := range coordinates {
-			k := coordinate.String()
+		for _, p := range pts {
+			k := p.String()
 
 			if _, exists := keys[k]; !exists {
-				cells = append(cells, g.cellAtCoordinate(coordinate))
+				_c, err := g.CellAtPoint(p)
+				if err == nil {
+					cells = append(cells, _c)
+				}
+
 				keys[k] = true
 			}
 		}
@@ -104,155 +98,69 @@ func (g *Grid) cellsToEvolve() (cells []*Cell) {
 	return cells
 }
 
-func (g *Grid) activeCells() (activeCells []*Cell) {
-	for _, row := range g.Cells {
-		for _, c := range row {
-			if c.Active {
-				activeCells = append(activeCells, c)
-			}
-		}
-	}
+func (g *Grid) evolveCell(c *Cell) {
+	p := Point{c.X, c.Y}
+	aCells := []*Cell{}
 
-	return activeCells
-}
-
-func (g *Grid) adjacentCoordinates(c *Cell) []Coordinate {
-	coordinates := []Coordinate{}
-
-	if c == nil {
-		return coordinates
-	}
-
-	coordinates = append(coordinates,
-		Coordinate{c.X - 1, c.Y + 1},
-		Coordinate{c.X - 1, c.Y},
-		Coordinate{c.X - 1, c.Y - 1},
-		Coordinate{c.X, c.Y - 1},
-		Coordinate{c.X, c.Y + 1},
-		Coordinate{c.X + 1, c.Y - 1},
-		Coordinate{c.X + 1, c.Y},
-		Coordinate{c.X + 1, c.Y + 1},
-	)
-
-	return coordinates
-}
-
-func (g *Grid) activeAdjacentCells(c *Cell) (adjCells []*Cell) {
-	for _, coordinate := range g.adjacentCoordinates(c) {
-		adjCell := g.cellAtCoordinate(coordinate)
-
-		if adjCell != nil && adjCell.Active {
-			adjCells = append(adjCells, adjCell)
-		}
-	}
-
-	return adjCells
-}
-
-func (g *Grid) bumpGeneration() {
-	g.Generation++
-
-	for _, row := range g.Cells {
-		for _, c := range row {
-			c.Generation++
-		}
-	}
-}
-
-func (g *Grid) ActivateCells(msgCells map[string]Cell, u *User) (cells []*Cell) {
-	for _, _c := range msgCells {
-		c := g.cell(_c.X, _c.Y)
-
-		if c == nil {
+	for _, ap := range p.Adjacent() {
+		ac, err := g.CellAtPoint(ap)
+		if err != nil {
 			continue
 		}
 
-		c.Active = _c.Active
-		if c.Active {
-			// add user to cell's agents and set cell's color to user's
-			c.Agents = map[string]*User{}
-			c.Agents[u.Name] = u
-			c.Color = u.Color
+		if ac.Active {
+			aCells = append(aCells, ac)
 		}
-
-		cells = append(cells, c)
 	}
 
-	return cells
+	activeCount := len(aCells)
+
+	switch {
+	// condition #1 & #3: cell dies
+	case c.Active && (activeCount < 2 || activeCount > 3):
+		c.active = false
+		c.color = Color{}
+	//condition #2: cell stays alive
+	case c.Active && (activeCount == 2 || activeCount == 3):
+		c.active = true
+		c.color = c.Color
+	// condition #4: cell comes to life
+	case !c.Active && activeCount == 3:
+		c.active = true
+
+		colors := []Color{}
+		for _, _c := range aCells {
+			colors = append(colors, _c.Color)
+		}
+
+		c.color = AverageColor(colors)
+	}
 }
 
-func (g *Grid) Evolve() (gu GridUpdate) {
-	updatedCells := []*Cell{}
-	cells := g.cellsToEvolve()
+func (g *Grid) StartEvolutions() {
+	var cells = []*Cell{}
 
-	g.bumpGeneration()
+	for {
+		t0 := time.Now()
 
-	// evaluate every cell's next evolution
-	for _, c := range cells {
-		if c == nil {
-			continue
+		g.Generation++
+
+		cells = g.unstableCells()
+
+		for _, c := range cells {
+			g.evolveCell(c)
 		}
 
-		adjCells := g.activeAdjacentCells(c)
-		activeCount := len(adjCells)
-
-		// evaluate evolution state on cell copy
-		var cellCopy Cell
-		cellCopy = *c
-
-		if c.Active {
-			if activeCount < 2 { // condition #1: cell dies
-				cellCopy.Active = false
-				cellCopy.Agents = map[string]*User{}
-			} else if activeCount == 2 || activeCount == 3 { //condition #2: cell lives
-				cellCopy.Active = true
-				cellCopy.appendAdjacentCellsAgents(adjCells)
-			} else if activeCount > 3 { // condition #3: cell dies
-				cellCopy.Active = false
-				cellCopy.Agents = map[string]*User{}
-			}
-		} else {
-			if activeCount == 3 { // condition #4: cell lives
-				cellCopy.Active = true
-				cellCopy.appendAdjacentCellsAgents(adjCells)
-			}
+		for _, c := range cells {
+			c.Flush()
 		}
 
-		updatedCells = append(updatedCells, &cellCopy)
+		t1 := time.Now()
+		de := t1.Sub(t0)
+		di := time.Duration(viper.GetInt("evoInterval")) * time.Millisecond
+
+		g.evoChan <- NewEvolution(cells, g.Generation, de, di)
+
+		time.Sleep(di)
 	}
-
-	// apply evolution updates
-	for i, cellCopy := range updatedCells {
-		c := g.cell(cellCopy.X, cellCopy.Y)
-		c.Active = cellCopy.Active
-
-		if c.Active {
-			c.Color = cellCopy.AverageColor()
-		}
-
-		updatedCells[i] = c
-	}
-
-	return g.UpdateFromCells(updatedCells)
-}
-
-type GridUpdate struct {
-	Generation int          `json:"generation"`
-	Cells      []CellUpdate `json:"cells"`
-}
-
-func (g *Grid) UpdateFromCells(updatedCells []*Cell) (gu GridUpdate) {
-	gu.Generation = g.Generation
-
-	for _, c := range updatedCells {
-		gu.Cells = append(gu.Cells, CellUpdate{
-			X:          c.X,
-			Y:          c.Y,
-			Active:     c.Active,
-			Color:      c.Color,
-			Generation: c.Generation,
-		})
-	}
-
-	return gu
 }
