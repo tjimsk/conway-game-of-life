@@ -73,6 +73,7 @@ The `Grid` introduces the concept of `unstable cells`, which denotes cells that 
 ### Server
 - Additional time would be spent on the following:
 	- Adding an extra integration test to cover active cells following rule #4 and their assigned averaged colour.
+	- The use of goroutines for concurrency is very advantageous for performance and code clarity, but its typical tradeoff is testability.  There would need to be some additional refactoring to ensure that everything can be tested, up to a satisfactory coverage level.
 	- Implementing mutex while accessing cells and other grid properties.
 	- Better error handling/logging: currently the server kills the socket connection and lets the client reconnect whenever any message fails to send/receive.  While this is okay in a session-less version of the app, that would need to be handled with more care otherwise.
 ### Client
