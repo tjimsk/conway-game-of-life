@@ -1,7 +1,7 @@
 package main
 
 func (g *Grid) seed() {
-	player0 := NewUser(nil) // create a seed user since it needs a random color
+	player0 := g.NewUser(nil) // create a seed user since it needs a random color
 
 	points := []Point{
 		// blinker
@@ -26,4 +26,5 @@ func (g *Grid) seed() {
 		c.Active = true
 		c.Color = player0.Color
 	}
+
 }

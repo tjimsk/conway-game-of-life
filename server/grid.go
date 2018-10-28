@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/spf13/viper"
 )
 
@@ -19,6 +20,7 @@ type Grid struct {
 	Width      int `json:"w"`
 
 	cells      map[int]map[int]*Cell
+	users      map[string]User
 	evoChan    chan Evolution
 	updateChan chan []*Cell
 }
@@ -29,6 +31,7 @@ func NewGrid(w int, h int) *Grid {
 		Height: h,
 
 		cells:      map[int]map[int]*Cell{},
+		users:      map[string]User{},
 		evoChan:    make(chan Evolution),
 		updateChan: make(chan []*Cell),
 	}
@@ -42,6 +45,25 @@ func NewGrid(w int, h int) *Grid {
 	}
 
 	return g
+}
+
+func (g *Grid) NewUser(conn *websocket.Conn) User {
+	u := User{
+		Name:       NewUserName(),
+		Color:      NewRandomColor(),
+		conn:       conn,
+		evoChan:    make(chan Evolution),
+		updateChan: make(chan []*Cell),
+		closeChan:  make(chan bool),
+	}
+
+	g.users[u.Name] = u
+
+	return u
+}
+
+func (g *Grid) UnregisterUser(name string) {
+	delete(g.users, name)
 }
 
 func (g *Grid) CellAtPoint(p Point) (c *Cell, err error) {
@@ -137,30 +159,33 @@ func (g *Grid) evolveCell(c *Cell) {
 	}
 }
 
+func (g *Grid) evolve() Evolution {
+	t0 := time.Now()
+
+	g.Generation++
+
+	cells := g.unstableCells()
+
+	for _, c := range cells {
+		g.evolveCell(c)
+	}
+
+	for _, c := range cells {
+		c.Flush()
+	}
+
+	t1 := time.Now()
+	de := t1.Sub(t0)
+	di := time.Duration(viper.GetInt("evoInterval")) * time.Millisecond
+
+	return NewEvolution(cells, g.Generation, de, di)
+}
+
 func (g *Grid) StartEvolutions() {
-	var cells = []*Cell{}
-
 	for {
-		t0 := time.Now()
+		evo := g.evolve()
+		g.evoChan <- evo
 
-		g.Generation++
-
-		cells = g.unstableCells()
-
-		for _, c := range cells {
-			g.evolveCell(c)
-		}
-
-		for _, c := range cells {
-			c.Flush()
-		}
-
-		t1 := time.Now()
-		de := t1.Sub(t0)
-		di := time.Duration(viper.GetInt("evoInterval")) * time.Millisecond
-
-		g.evoChan <- NewEvolution(cells, g.Generation, de, di)
-
-		time.Sleep(di)
+		time.Sleep(evo.Interval)
 	}
 }
