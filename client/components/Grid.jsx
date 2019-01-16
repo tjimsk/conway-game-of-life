@@ -5,33 +5,44 @@ const styles = require("Components/Grid.scss")
 
 class Grid extends React.Component {
 	render() {
+		var rows = []
+		for (var y = 1; y <= this.props.height; y++) {
+			rows.push(y)
+		}
+		var cols = []
+		for (var x = 1; x <= this.props.width; x++) {
+			cols.push(x)
+		}
+
 		return (
 			<div className={styles.grid}>
-				<div className={styles.scrollView}>
-
-					{Object.keys(this.props.cells).map((k) => {
-						var props = {
-							key: k,
-							user: this.props.user,
-							cell: this.props.cells[k],
-							onClickCell: this.props.onClickCell,
-							cellRefs: this.props.cellRefs,
-							setActiveColorFunc: this.props.setActiveColorFunc
-						}
-
-						return (
-							<Cell {...props} />)
-					})}
-				</div>
+				<table className={styles.table}>
+					<tbody>
+						{rows.map((rowId) => {
+							return (
+							<tr key={rowId}>
+								{cols.map((colId) => {
+									return (
+									<Cell key={`${colId}:${rowId}`} 
+										cellId={`${colId}:${rowId}`}
+										cellRefs={this.props.cellRefs}
+										x={colId}
+										y={rowId}
+										onClickCell={this.props.onClickCell.bind(this)} />)
+								})}
+							</tr>)
+						})}
+					</tbody>
+				</table>
 			</div>)
 	}
 
 	// disable updates from parent propagation
 	shouldComponentUpdate(nextProps, nextState) {
-		if (nextProps.receivedActiveCells) {
-			return false
-		} else {
+		if (this.props.width * this.props.height == 0) {
 			return true
+		} else {
+			return false
 		}
 	}
 }

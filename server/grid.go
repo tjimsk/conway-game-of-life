@@ -1,191 +1,271 @@
-package main
+package life
 
 import (
-	"errors"
 	"fmt"
-	"time"
+	"log"
 
 	"github.com/gorilla/websocket"
 	"github.com/spf13/viper"
 )
 
-var (
-	_                 fmt.Stringer
-	ErrCellOutOfBound = errors.New("Cell point is out of bounds")
-)
-
 type Grid struct {
-	Generation int `json:"g"`
-	Height     int `json:"h"`
-	Width      int `json:"w"`
-
-	cells      map[int]map[int]*Cell
-	users      map[string]User
-	evoChan    chan Evolution
-	updateChan chan []*Cell
+	Generation int
+	Height     int
+	Width      int
+	Paused     bool
+	players    map[string]Player
+	state      map[int]map[int]Cell
 }
 
-func NewGrid(w int, h int) *Grid {
+func NewGrid(width int, height int) *Grid {
 	g := &Grid{
-		Width:  w,
-		Height: h,
-
-		cells:      map[int]map[int]*Cell{},
-		users:      map[string]User{},
-		evoChan:    make(chan Evolution),
-		updateChan: make(chan []*Cell),
-	}
-
-	for i := 0; i < w; i++ {
-		g.cells[i] = map[int]*Cell{}
-
-		for j := 0; j < h; j++ {
-			g.cells[i][j] = NewCell(Point{i, j})
-		}
+		Width:   width,
+		Height:  height,
+		players: map[string]Player{},
+		state:   newState(width, height),
 	}
 
 	return g
 }
 
-func (g *Grid) NewUser(conn *websocket.Conn) User {
-	u := User{
-		Name:       NewUserName(),
-		Color:      NewRandomColor(),
-		conn:       conn,
-		evoChan:    make(chan Evolution),
-		updateChan: make(chan []*Cell),
-		closeChan:  make(chan bool),
-	}
-
-	g.users[u.Name] = u
-
-	return u
-}
-
-func (g *Grid) UnregisterUser(name string) {
-	delete(g.users, name)
-}
-
-func (g *Grid) CellAtPoint(p Point) (c *Cell, err error) {
-	_, ok := g.cells[p.X]
-	if !ok {
-		return nil, ErrCellOutOfBound
-	}
-
-	c, ok = g.cells[p.X][p.Y]
-	if !ok {
-		return nil, ErrCellOutOfBound
-	}
-
-	return c, nil
-}
-
-func (g *Grid) activeCells() (cells []*Cell) {
-	for _, cellRow := range g.cells {
-		for _, c := range cellRow {
-			if c.Active {
-				cells = append(cells, c)
+func newState(width, height int) (state map[int]map[int]Cell) {
+	state = map[int]map[int]Cell{}
+	for x := 0; x < width; x++ {
+		state[x] = map[int]Cell{}
+		for y := 0; y < height; y++ {
+			state[x][y] = Cell{
+				X: x,
+				Y: y,
 			}
 		}
 	}
-
-	return cells
+	return state
 }
 
-// An unstable cell is one located in a position adjacent to an active cell.
-// When evolving an entire grid, this function is called first to determine
-// the cells on which to apply conway's 4 rules of evolution.
-func (g *Grid) unstableCells() (cells []*Cell) {
-	aCells := g.activeCells()
-	keys := map[string]bool{}
-
-	for _, c := range aCells {
-		p := Point{c.X, c.Y}
-		pts := append(p.Adjacent(), p)
-
-		for _, p := range pts {
-			k := p.String()
-
-			if _, exists := keys[k]; !exists {
-				_c, err := g.CellAtPoint(p)
-				if err == nil {
-					cells = append(cells, _c)
-				}
-
-				keys[k] = true
-			}
+func newStateCopy(state map[int]map[int]Cell) (stateCopy map[int]map[int]Cell) {
+	stateCopy = newState(len(state), len(state[0]))
+	for x, row := range state {
+		stateCopy[x] = map[int]Cell{}
+		for y, _ := range row {
+			stateCopy[x][y] = state[x][y]
 		}
 	}
-
-	return cells
+	return stateCopy
 }
 
-func (g *Grid) evolveCell(c *Cell) {
-	p := Point{c.X, c.Y}
-	aCells := []*Cell{}
-
-	for _, ap := range p.Adjacent() {
-		ac, err := g.CellAtPoint(ap)
-		if err != nil {
+func (g *Grid) Activate(points []Point, player Player) {
+	state := newStateCopy(g.state)
+	for _, p := range points {
+		if p.X*p.Y < 0 || p.X >= g.Width || p.Y >= g.Height {
 			continue
 		}
-
-		if ac.Active {
-			aCells = append(aCells, ac)
-		}
+		c := state[p.X][p.Y]
+		c.Active = true
+		c.Color = player.Color
+		state[p.X][p.Y] = c
 	}
-
-	activeCount := len(aCells)
-
-	switch {
-	// condition #1 & #3: cell dies
-	case c.Active && (activeCount < 2 || activeCount > 3):
-		c.active = false
-		c.color = Color{}
-	//condition #2: cell stays alive
-	case c.Active && (activeCount == 2 || activeCount == 3):
-		c.active = true
-		c.color = c.Color
-	// condition #4: cell comes to life
-	case !c.Active && activeCount == 3:
-		c.active = true
-
-		colors := []Color{}
-		for _, _c := range aCells {
-			colors = append(colors, _c.Color)
-		}
-
-		c.color = AverageColor(colors)
-	}
+	g.state = state
 }
 
-func (g *Grid) evolve() Evolution {
-	t0 := time.Now()
-
+func (g *Grid) Evolve() {
+	currentState := g.state
+	nextState := newStateCopy(currentState)
 	g.Generation++
-
-	cells := g.unstableCells()
-
-	for _, c := range cells {
-		g.evolveCell(c)
+	// get active points
+	activePoints := []Point{}
+	for x, col := range currentState {
+		for y, c := range col {
+			if c.Active {
+				activePoints = append(activePoints, Point{x, y})
+			}
+		}
 	}
-
-	for _, c := range cells {
-		c.Flush()
+	// get unstable points
+	unstablePoints := []Point{}
+	keys := map[string]bool{}
+	for _, p := range activePoints {
+		adjacentPoints := []Point{
+			p,
+			Point{p.X - 1, p.Y + 1},
+			Point{p.X - 1, p.Y},
+			Point{p.X - 1, p.Y - 1},
+			Point{p.X, p.Y - 1},
+			Point{p.X, p.Y + 1},
+			Point{p.X + 1, p.Y - 1},
+			Point{p.X + 1, p.Y},
+			Point{p.X + 1, p.Y + 1},
+		}
+		for _, p := range adjacentPoints {
+			if p.X*p.Y < 0 || p.X > g.Width || p.Y > g.Height {
+				continue
+			}
+			k := fmt.Sprintf("%v,%v", p.X, p.Y)
+			_, ok := keys[k]
+			if ok {
+				continue
+			}
+			keys[k] = true
+			unstablePoints = append(unstablePoints, p)
+		}
 	}
-
-	t1 := time.Now()
-	de := t1.Sub(t0)
-	di := time.Duration(viper.GetInt("evoInterval")) * time.Millisecond
-
-	return NewEvolution(cells, g.Generation, de, di)
+	// check next evolution state of each unstable cell
+	for _, p := range unstablePoints {
+		if p.X*p.Y < 0 || p.X >= g.Width || p.Y >= g.Height {
+			continue
+		}
+		adjacentPoints := []Point{
+			Point{p.X - 1, p.Y + 1},
+			Point{p.X - 1, p.Y},
+			Point{p.X - 1, p.Y - 1},
+			Point{p.X, p.Y - 1},
+			Point{p.X, p.Y + 1},
+			Point{p.X + 1, p.Y - 1},
+			Point{p.X + 1, p.Y},
+			Point{p.X + 1, p.Y + 1},
+		}
+		c := currentState[p.X][p.Y]
+		active := c.Active
+		count := 0
+		activeCells := []Cell{}
+		for _, ap := range adjacentPoints {
+			if ap.X*ap.Y < 0 || ap.X >= g.Width || ap.Y >= g.Height {
+				continue
+			}
+			if currentState[ap.X][ap.Y].Active {
+				count++
+				activeCells = append(activeCells, currentState[ap.X][ap.Y])
+			}
+		}
+		switch {
+		case active && (count < 2 || count > 3): // condition #1 & #3: cell dies
+			c := nextState[p.X][p.Y]
+			c.Active = false
+			c.Color = Color{}
+			nextState[p.X][p.Y] = c
+		case active && (count == 2 || count == 3): //condition #2: cell stays alive
+			c := nextState[p.X][p.Y]
+			c.Active = true
+			c.Color = c.Color
+			nextState[p.X][p.Y] = c
+			// log.Println("cell stays alive", p)
+		case !active && count == 3: // condition #4: cell comes to life; average cell colors
+			c := nextState[p.X][p.Y]
+			c.Active = true
+			colors := []Color{}
+			for _, _c := range activeCells {
+				colors = append(colors, _c.Color)
+			}
+			c.Color = averageColor(colors)
+			nextState[p.X][p.Y] = c
+			// log.Println("cell comes to life!", p)
+		}
+	}
+	g.state = nextState
 }
 
-func (g *Grid) StartEvolutions() {
-	for {
-		evo := g.evolve()
-		g.evoChan <- evo
-
-		time.Sleep(evo.Interval)
+func (g *Grid) Deactivate(p Point, player Player) {
+	state := newStateCopy(g.state)
+	if p.X*p.Y < 0 || p.X >= g.Width || p.Y >= g.Height {
+		return
 	}
+	c := state[p.X][p.Y]
+	c.Active = false
+	state[p.X][p.Y] = c
+
+	g.state = state
+}
+
+func (g *Grid) AddPlayer(conn *websocket.Conn) (player Player) {
+	player = NewPlayer(conn)
+	g.players[player.Name] = player
+
+	go player.ListenMessages()
+	go player.ListenWebsocket()
+
+	return player
+}
+
+func (g *Grid) RemovePlayer(player Player) {
+	delete(g.players, player.Name)
+	log.Printf("%v removed", player.Name)
+}
+
+func (g *Grid) PlayerConnected(player Player) bool {
+	_, ok := g.players[player.Name]
+	return ok
+}
+
+func (g *Grid) SetPause(pause bool, player Player) {
+	g.Paused = pause
+}
+
+func (g *Grid) SetInterval(interval int, player Player) {
+	viper.Set("interval", interval)
+}
+
+func (g *Grid) PushStateChange() {
+	msg := NewPushStateMessage(g)
+	for _, player := range g.players {
+		player.messageChan <- msg
+	}
+}
+
+func (g *Grid) PushPauseChange(changedBy Player) {
+	msg := NewPushPauseMessage(g, changedBy)
+	for _, player := range g.players {
+		player.messageChan <- msg
+	}
+}
+
+func (g *Grid) PushIntervalChange(changedBy Player) {
+	msg := NewPushIntervalMessage(g, changedBy)
+	for _, player := range g.players {
+		player.messageChan <- msg
+	}
+}
+
+func (g *Grid) PushPlayer(player Player) {
+	msg := NewPushPlayerMessage(player)
+	player.messageChan <- msg
+}
+
+func (g *Grid) PushState(player Player) {
+	msg := NewPushStateMessage(g)
+	player.messageChan <- msg
+}
+
+type Cell struct {
+	Active bool  `json:"-"`
+	Color  Color `json:"c"`
+	X      int   `json:"x"`
+	Y      int   `json:"y"`
+}
+
+func newCell(p Point) Cell {
+	return Cell{
+		X: p.X,
+		Y: p.Y,
+	}
+}
+
+type Point struct {
+	X int
+	Y int
+}
+
+func (p Point) String() string {
+	return fmt.Sprintf(`(%v,%v)`, p.X, p.Y)
+}
+
+func (p Point) adjacentPoints() (ps []Point) {
+	return append(ps,
+		Point{p.X - 1, p.Y + 1},
+		Point{p.X - 1, p.Y},
+		Point{p.X - 1, p.Y - 1},
+		Point{p.X, p.Y - 1},
+		Point{p.X, p.Y + 1},
+		Point{p.X + 1, p.Y - 1},
+		Point{p.X + 1, p.Y},
+		Point{p.X + 1, p.Y + 1},
+	)
 }

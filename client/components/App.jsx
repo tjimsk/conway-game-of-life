@@ -1,6 +1,8 @@
 import React from "react"
+import axios from "axios"
 
 import {Toolbox} from "Components/Toolbox"
+import {Toolbar} from "Components/Toolbar"
 import {Grid} from "Components/Grid"
 import {Status} from "Components/Status"
 import {ConnectBackground} from "Components/ConnectBackground"
@@ -9,38 +11,31 @@ import {newClient} from "Util/websocket"
 
 const styles = require("Components/App.scss")
 
-const MESSAGE_TYPE_USER_DETAILS = 0
-const MESSAGE_TYPE_GRID_DETAILS = 1
-const MESSAGE_TYPE_GRID_ACTIVE_CELLS = 2
-const MESSAGE_TYPE_GRID_UPDATE = 3
-const MESSAGE_TYPE_UPDATE_CELLS = 4
-
 class App extends React.Component {
 	render() {
 		return (
 			<div className={styles.app}>
 				{this.state.readyState !== 1 ? <ConnectBackground /> : null}
 
-				{this.state.readyState !== 1 ? null :
-				<Toolbox
-					ref={ref => {this.toolbox = ref}}
-					grid={this.state.grid}
-					user={this.state.user}
-					selectedToolIndex={this.state.selectedToolIndex}
-					onClickTool={this.onClickTool.bind(this)} />}
+				<Toolbar
+					minInterval={100}
+					maxInterval={2000}
+					paused={this.state.paused}
+					toolbarRef={this.toolbarRef}
+					onClickPauseHandler={this.onClickPauseHandler.bind(this)}
+					onChangeIntervalHandler={this.onChangeIntervalHandler.bind(this)}
+					onClickPattern={this.onClickPattern.bind(this)} />
 
 				<Grid 
-					grid={this.state.grid}
-					user={this.state.user}
-					cells={this.state.cells}
-					onClickCell={this.onClickCell.bind(this)}
-					receivedActiveCells={this.state.receivedActiveCells}
+					width={this.state.width}
+					height={this.state.height}
 					cellRefs={this.cellRefs}
-					setActiveColorFunc={this.setActiveColorFunc} />
+					onClickCell={this.onClickCell.bind(this)} />
 
 				<Status
-					grid={this.state.grid}
+					player={this.state.player}
 					readyState={this.state.readyState}
+					generation={this.state.generation}
 					dataSizeReceived={this.state.dataSizeReceived} />
 			</div>)
 	}
@@ -48,164 +43,183 @@ class App extends React.Component {
 	constructor(props) {
 		super(props)
 		this.state = this.getInitialState()
-		this.setActiveColorFunc = {}
 		this.cellRefs = {}
+		this.toolbarRef = {}
+		this.activeCells = []
 		this.createWebsocketConnection()
 	}
 
 	getInitialState() {
 		return {
-			cells: {},
-			grid: {height: 0, width: 0, generation: 0},
-			readyState: -1,
+			width: 0,
+			height: 0,
+			generation: 0,
+			player: {name: "", color: {r: 0, g: 0, b: 0}},
 			dataSizeReceived: 0,
-			receivedActiveCells: false,
-			user: {name: "", color: {r: 0, g: 0, b: 0}},
-			selectedToolIndex: 0
+			readyState: -1,
+
+			selectedToolIndex: 0,
 		}
 	}
 
 	createWebsocketConnection() {
 		this.client = newClient()
-
 		this.client.onopen = this.onWebSocketOpen.bind(this)
 		this.client.onclose = this.onWebSocketClose.bind(this)
 		this.client.onmessage = this.onWebSocketMessage.bind(this)
 	}
 
 	onWebSocketOpen() {
-		this.checkWebSocketState()
-	}
-
-	checkWebSocketState() {
 		setTimeout(() => {
 			this.setState({
 				readyState: this.client.readyState
-			}, this.checkWebSocketState.bind(this))
-		}, 500)
+			}, this.onWebSocketOpen.bind(this))
+		}, 1000)
 	}
 
 	onWebSocketClose() {
 		this.setState(this.getInitialState())
-
-		setTimeout(this.createWebsocketConnection.bind(this), 4000)
+		setTimeout(this.createWebsocketConnection.bind(this), 500)
 	}
 
 	onWebSocketMessage(e) {
-	    if (typeof e.data !== "string") {return}
-
         var msg = JSON.parse(e.data)
 	    var size = e.data.length / 1000
 
-        switch(msg.t) {
-    	case MESSAGE_TYPE_USER_DETAILS:
-    		this.setUserDetails(msg, size); break
-    	case MESSAGE_TYPE_GRID_DETAILS:
-    		this.renderGrid(msg, size); break
-		case MESSAGE_TYPE_GRID_ACTIVE_CELLS:
-			this.setInitialActiveCells(msg, size); break
-		case MESSAGE_TYPE_GRID_UPDATE:
-			this.applyGridUpdates(msg, size); break
-		default:
-			break
-        }
+	    if (msg.player != null && Object.keys(msg).length == 1) {
+			this.setState({
+				player: msg.player
+			})    		
+	    } else if (msg.activeCells != null) {
+	    	this.setState({
+	    		width: msg.width,
+	    		height: msg.height,
+	    		generation: msg.generation,
+	    		dataSizeReceived: size,
+	    		paused: msg.paused,
+	    		interval: msg.interval
+	    	}, this.didReceiveNewState.bind(this, msg))
+	    } else if (msg.paused != null) {
+	    	this.setState({
+	    		paused: msg.paused,
+	    		pausedBy: msg.player
+	    	}, this.renderToolbar.bind(this))
+	    } else if (msg.interval != null) {
+	    	this.setState({
+	    		interval: msg.interval,
+	    		intervalSetBy: msg.player
+	    	}, this.renderToolbar.bind(this))
+	    }
 	}
 
-	setUserDetails(msg) {
-		this.setState({user: msg.c})
+	didReceiveNewState(msg) {
+		this.renderToolbar()
+		this.renderGrid(msg.activeCells)
 	}
 
-	renderGrid(msg) {
-		var g = Object.assign({}, this.state.grid, msg.c)
-
-		// create `cells` object
-		// all cells inactive with null color
-		var cells = {}
-		var width = g.w 
-		var height = g.h
-		for (var i = 1; i <= width; i++) {
-			for (var j = 1; j <= height; j++) {
-				var k = `${i};${j}`
-				cells[k] = {x: i, y: j, k: k}
-			}
-		}
-
-		this.setState({
-			grid: g,
-			cells: cells
+	renderToolbar() {
+		this.toolbarRef.component.setState({
+			interval: this.state.interval,
+			paused: this.state.paused
 		})
 	}
 
-	setInitialActiveCells(msg) {
-		this.setState({
-			receivedActiveCells: true // prevent Grid update
-		}, this.updateCells.bind(this, msg.c))
-	}
-
-	applyGridUpdates(msg, size) {
-		var g = Object.assign({}, this.state.grid)
-		g.generation = msg.c.g
-
-		this.setState({
-			grid: g,
-			dataSizeReceived: size
-		}, this.updateCells.bind(this, msg.c.c))
-	}
-
-	updateCells(cells) {
-		if (cells == null) {
-			return
+	renderGrid(nextActiveCellsArr) {
+		var currentActiveCells = {}
+		for (var i = 0; i < this.activeCells.length; i++) {
+			var cell = this.activeCells[i]
+			currentActiveCells[`${cell.x}:${cell.y}`] = cell
 		}
-
-		for (var i = 0; i < cells.length; i++) {
-			var c = cells[i]
-			var k = `${c.x};${c.y}`
-
-			var setActiveColorFunc = this.setActiveColorFunc[k]
-			if (setActiveColorFunc != null) {
-				setActiveColorFunc(c.a ? c.c : null)
+		var nextActiveCells = {}
+		for (var i = 0; i < nextActiveCellsArr.length; i++) {
+			var cell = nextActiveCellsArr[i]
+			nextActiveCells[`${cell.x}:${cell.y}`] = cell
+		}
+		Object.keys(currentActiveCells).map((cellId) => {
+			if (nextActiveCells[cellId] == null) {
+				var cell = this.cellRefs[cellId]
+				if (cell != null) {
+					cell.setState({
+						active: false,
+						color: null
+					})
+				}
 			}
-		}
-	}
-
-	onClickTool(index) {
-		this.setState({
-			selectedToolIndex: index
 		})
+		Object.keys(nextActiveCells).map((cellId) => {
+			var cell = this.cellRefs[cellId]
+			if (cell != null) {
+				cell.setState({
+					active: true,
+					red: nextActiveCells[cellId].c.R,
+					green: nextActiveCells[cellId].c.G,
+					blue: nextActiveCells[cellId].c.B
+				})
+			}
+		})
+		this.activeCells = nextActiveCellsArr
 	}
 
-	onClickCell(c) {
-		var msg = {
-			t: MESSAGE_TYPE_UPDATE_CELLS,
-			c: []
-		}
-
-		msg.c = this.toolbox.getCellsFromSelectedTool(c.x, c.y)
-
-		var cellsArr = []
-
-		if (this.toolbox.selectedToolName() === "Point") {
-			Object.keys(msg.c).map((i) => {
-				var c = msg.c[i]
-				var k = `${c.x};${c.y}` 
-				c.a = !this.cellRefs[k].state.active
-				c.c = c.a ? this.state.user.c : {}
-
-				cellsArr.push(c)
+	onClickCell(x, y) {
+		var cell = this.cellRefs[`${x}:${y}`]
+		if (cell.state.active && this.toolbarRef.component.state.pattern == -1) {
+			console.log("deactivate")
+			axios.post("/deactivate", {
+				point: {x, y},
+				player: this.state.player
+			}).then((response) => {
+				console.log(response)
+			}).catch((err) => {
+				console.log(err.response)
 			})
 		} else {
-			Object.keys(msg.c).map((k) => {
-				var c = msg.c[k]
-				c.a = true
-				c.c = this.state.user.c
-
-				cellsArr.push(c)
+			var points = this.toolbarRef.component.patternPoints({x, y})
+			axios.post("/activate", {
+				points: points,
+				player: this.state.player
+			}).then((response) => {
+				console.log(response)
+			}).catch((err) => {
+				console.log(err.response)
 			})
 		}
+	}
 
-		this.updateCells(cellsArr)
+	onClickPauseHandler(e) {
+		var currentPauseState = this.toolbarRef.component.state.paused
+		var nextPauseState = !currentPauseState
+		this.toolbarRef.component.setState({
+			paused: nextPauseState
+		})
+		axios.post("/pause", {
+			player: this.state.player,
+			pause: nextPauseState
+		}).then((response) => {
+			console.log(response)
+		}).catch((err) => {
+			console.log(err.response)
+		})
+	}
 
-		this.client.send(JSON.stringify(msg))
+	onChangeIntervalHandler(e) {
+		var interval = e.target.value
+		this.toolbarRef.component.setState({
+			interval: e.target.value
+		})
+		axios.post("/interval", {
+			player: this.state.player,
+			interval: parseInt(interval)
+		}).then((response) => {
+			console.log(response)
+		}).catch((err) => {
+			console.log(err.response)
+		})
+	}
+
+	onClickPattern(patternId) {
+		this.toolbarRef.component.setState({
+			pattern: this.toolbarRef.component.state.pattern == patternId ? -1 : patternId
+		})
 	}
 }
 

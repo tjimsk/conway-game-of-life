@@ -6,11 +6,10 @@
 	margin: 0px;
 	overflow: scroll;
 	padding: 0px;
-	position: relative;
 	width: 100%;
+}
 
-	.scrollView {
-		background-color: transparent;
-		position: relative;
-	}
+.table {
+	border: none;
+	border-collapse: collapse;
 }

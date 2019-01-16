@@ -1,15 +1,20 @@
 .status {
-	background-color: rgba(100,100,100,0.75);
+	align-items: center;
+	background-color: white;
 	bottom: 0;
-	color: white;
+	border-top: 1px solid rgb(200,200,200);
+	color: rgb(75,75,75);
 	cursor: default;
-	font-weight: lighter;
+	display: flex;
+	flex-direction: row;
+	// font-weight: lighter;
 	left: 0;
-	padding: 4px;
+	min-height: 64px;
 	position: absolute;
+	width: 100%;
 
 	.generation, .readyState, .dataSizeReceived {
-		padding: 4px 12px;
+		padding: 0px 12px;
 	}
 
 	.readyState {
@@ -20,3 +25,4 @@
 
 	}
 }
+

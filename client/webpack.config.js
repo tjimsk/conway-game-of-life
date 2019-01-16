@@ -10,10 +10,14 @@ var config = {
     output: {
         filename: "bundle.js",
         path: path.resolve(__dirname, "dist"),
-        publicPath: "/dist"
+        publicPath: "/"
     },
     resolve: {
-        alias: {Components: path.resolve(__dirname, "components"), Util: path.resolve(__dirname, "util")},
+        alias: {
+            Assets: path.resolve(__dirname, "assets"), 
+            Components: path.resolve(__dirname, "components"), 
+            Util: path.resolve(__dirname, "util")
+        },
         extensions: [".jsx", ".js", ".json", "scss", "css", "*"]
     },
     target: "web",
@@ -25,7 +29,11 @@ var config = {
         historyApiFallback: true,
         port: 9200,
         proxy: {
-            "/websocket": {changeOrigin: true, target: "ws://localhost:8080", secure: false, ws:true}
+            "/websocket": {changeOrigin: true, target: "ws://localhost:8080", secure: false, ws:true},
+            "/pause": {changeOrigin: true, target: "http://localhost:8080", secure: false},
+            "/activate": {changeOrigin: true, target: "http://localhost:8080", secure: false},
+            "/deactivate": {changeOrigin: true, target: "http://localhost:8080", secure: false},
+            "/interval": {changeOrigin: true, target: "http://localhost:8080", secure: false}
         }
     },
     module: {
@@ -48,8 +56,8 @@ var config = {
             {
                 test: /\.(png|jpg|gif)$/,
                 use: [
-                    {loader: "url-loader", options: {limit: 8192}},
-                    {loader: "file-loader", options: {limit: 8192}}
+                    // {loader: "url-loader", options: {limit: 8192}},
+                    {loader: "file-loader", options: {limit: 8192, name: "[name].[ext]", outputPath: "assets"}}
                 ]
             }
         ]

@@ -1,20 +1,23 @@
-# CONWAY'S GAME OF LIFE
+# GAME OF LIFE
 
 ## Description
-This project includes a server/client implementation of Conway's Game of Life.  It is a multiplayer Web app where players can interact with a Conway GoL grid and see real-time changes.
-### Basic Requirements
-1. A multiplayer web app allowing players to interact with a Conway GoL grid
-2. Real-time updates sent to all connected players
-3. Each player assigned a random colour 
-4. A set of common GoL cell patterns insertable on the grid 
-5. 4 rules of Conway GoL
-6. Cells coming to life following rule #4 get a colour value averaged from colour(s) of the 3 composing cells
-### Rules
+A multiplayer Game of Life written in Go and React.
+
+### Game Rules
 1. Any live cell with fewer than two live neighbours dies, as if caused by under-population.
 2. Any live cell with two or three live neighbours lives on to the next generation.
 3. Any live cell with more than three live neighbours dies, as if by overcrowding.
 4. Any dead cell with exactly three live neighbours becomes a live cell, as if by reproduction.
-## How to Build
+
+### Basic Requirements
+1. Multiple players interact with the grid
+2. Players get real time updates
+3. Players are assigned a color
+4. Insert templates on the grid
+5. 4 rules of Conway GoL
+6. Cells coming to life following rule #4 get a colour value averaged from colour(s) of the 3 composing cells
+
+## Build
 The project is separated into server and client.
 
 To build the server app, assuming `go` is already installed, you will need to get the dependencies by running `go get -d` inside the `./server` folder.  To build, run `go build` from the same folder.
@@ -22,8 +25,10 @@ To build the server app, assuming `go` is already installed, you will need to ge
 To build the client app, assuming `yarn` is installed, run `yarn` to get the list of dependencies and then `yarn build`.
 
 In development, you can build and run the server on default port `8080`, and run `yarn start` from the `./client` folder to run a hot reload version of the client that proxies Websocket requests to the server.
+
 ## How to Deploy
 For deployment, the application is containerised using Docker.  Assuming `docker` is installed, you can run `docker build --tag=conway --file=Dockerfile .` from the project root.  To run the application, simply run `docker run --publish=80:8080 --name=conway conway`
+
 ## Technical/Architectural Decisions
 ### Basics
 The primary element of this app is the `Grid`.  It has the following basic properties:
