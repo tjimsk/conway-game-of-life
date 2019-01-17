@@ -19,6 +19,9 @@ class Toolbar extends React.Component {
 				<div className={this.state.paused ? styles.resume : styles.pause}
 				 	onClick={this.props.onClickPauseHandler.bind(this)}>
 				</div>
+				<div className={styles.reset}
+				 	onClick={this.props.onClickResetHandler.bind(this)}>
+				</div>
 			</div>
 
 			<div className={styles.pattern}>

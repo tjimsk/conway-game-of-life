@@ -2,6 +2,8 @@ const path = require("path")
 const ExtractTextPlugin = require("extract-text-webpack-plugin")
 const HtmlPlugin = require("html-webpack-plugin")
 const CleanPlugin = require("clean-webpack-plugin")
+const UglifyJsPlugin = require("uglifyjs-webpack-plugin")
+const OptimizeCSSAssetsPlugin = require("optimize-css-assets-webpack-plugin")
 
 var config = {
     context: __dirname,
@@ -33,7 +35,8 @@ var config = {
             "/pause": {changeOrigin: true, target: "http://localhost:8080", secure: false},
             "/activate": {changeOrigin: true, target: "http://localhost:8080", secure: false},
             "/deactivate": {changeOrigin: true, target: "http://localhost:8080", secure: false},
-            "/interval": {changeOrigin: true, target: "http://localhost:8080", secure: false}
+            "/interval": {changeOrigin: true, target: "http://localhost:8080", secure: false},
+            "/reset": {changeOrigin: true, target: "http://localhost:8080", secure: false}
         }
     },
     module: {
@@ -65,7 +68,13 @@ var config = {
     plugins: [
         new ExtractTextPlugin({filename: "bundle.css"}),
         new HtmlPlugin({filename: "./index.html", favicon: path.resolve(__dirname, "assets/favicon.ico"), template: path.resolve(__dirname, "templates/index.html")})
-    ]
+    ],
+    optimization: {
+        minimizer: [
+            new UglifyJsPlugin({ cache: true, parallel: true, uglifyOptions: {compress: {drop_console: true}}}),
+            new OptimizeCSSAssetsPlugin({})
+        ]
+    }
 }
 
 module.exports = (env, argv) => {

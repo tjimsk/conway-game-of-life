@@ -61,6 +61,14 @@
 	background-size: 50%;
 }
 
+.reset {
+	@include control;
+	background-image: url("/assets/reset.png");
+	background-position: center;
+	background-repeat: no-repeat;
+	background-size: 35%;
+}
+
 @mixin tool() {
 	background-position: center;
 	background-repeat: no-repeat;

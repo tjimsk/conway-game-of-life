@@ -24,6 +24,7 @@ class App extends React.Component {
 					toolbarRef={this.toolbarRef}
 					onClickPauseHandler={this.onClickPauseHandler.bind(this)}
 					onChangeIntervalHandler={this.onChangeIntervalHandler.bind(this)}
+					onClickResetHandler={this.onClickResetHandler.bind(this)}
 					onClickPattern={this.onClickPattern.bind(this)} />
 
 				<Grid 
@@ -209,6 +210,16 @@ class App extends React.Component {
 		axios.post("/interval", {
 			player: this.state.player,
 			interval: parseInt(interval)
+		}).then((response) => {
+			console.log(response)
+		}).catch((err) => {
+			console.log(err.response)
+		})
+	}
+
+	onClickResetHandler() {
+		axios.post("/reset", {
+			player: this.state.player
 		}).then((response) => {
 			console.log(response)
 		}).catch((err) => {
