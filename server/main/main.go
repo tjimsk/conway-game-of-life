@@ -27,7 +27,7 @@ func main() {
 	log.SetFlags(log.Lshortfile)
 
 	viper.SetDefault("interval", 200)
-	viper.SetDefault("seed", true)
+	viper.SetDefault("seed", false)
 	viper.SetDefault("port", ":8080")
 	viper.SetDefault("height", 64)
 	viper.SetDefault("width", 120)
@@ -51,8 +51,10 @@ func main() {
 			for grid.Paused {
 				time.Sleep(10 * time.Millisecond)
 			}
-			grid.Evolve()
-			grid.PushStateChange()
+			go func() {
+				grid.Evolve()
+				grid.PushStateChange()
+			}()
 			time.Sleep(time.Duration(viper.GetInt("interval")) * time.Millisecond)
 		}
 	}()
@@ -62,6 +64,7 @@ func main() {
 	http.HandleFunc("/activate", HandleActivate)
 	http.HandleFunc("/deactivate", HandleDeactivate)
 	http.HandleFunc("/interval", HandleInterval)
+	http.HandleFunc("/reset", HandleReset)
 	http.HandleFunc("/websocket", HandleWebSocket)
 
 	log.Println("listening on", viper.GetString("port"))
@@ -166,6 +169,27 @@ func HandleInterval(w http.ResponseWriter, r *http.Request) {
 	if grid.PlayerConnected(msg.Player) {
 		grid.SetInterval(msg.Interval, msg.Player)
 		grid.PushIntervalChange(msg.Player)
+	}
+}
+
+func HandleReset(w http.ResponseWriter, r *http.Request) {
+	log.Printf("HandleReset: %v %v\n", r.Method, r.URL.Path)
+	b, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	msg := life.RequestResetMessage{}
+	if err := json.Unmarshal(b, &msg); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Println("HandleReset:", msg)
+
+	if grid.PlayerConnected(msg.Player) {
+		grid.Reset(msg.Player)
+		grid.PushStateChange()
 	}
 }
 

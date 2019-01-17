@@ -88,6 +88,10 @@ type RequestIntervalMessage struct {
 	Player   Player `json:"player"`
 }
 
+type RequestResetMessage struct {
+	Player Player `json:"player"`
+}
+
 // const (
 // 	MESSAGE_TYPE_USER_DETAILS      MessageType = iota // 0
 // 	MESSAGE_TYPE_GRID_DETAILS                         // 1

@@ -203,6 +203,11 @@ func (g *Grid) SetInterval(interval int, player Player) {
 	viper.Set("interval", interval)
 }
 
+func (g *Grid) Reset(player Player) {
+	g.state = newState(g.Width, g.Height)
+	g.Generation = 0
+}
+
 func (g *Grid) PushStateChange() {
 	msg := NewPushStateMessage(g)
 	for _, player := range g.players {
