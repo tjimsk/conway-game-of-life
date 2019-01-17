@@ -40,16 +40,12 @@ func main() {
 	viper.BindEnv("width")
 	viper.BindEnv("static")
 
-	// set up and start grid
+	// initialize a grid and start evolution loop
 	grid = life.NewGrid(viper.GetInt("width"), viper.GetInt("height"))
-	if viper.GetBool("seed") {
-		seed()
-	}
-
 	go func() {
 		for {
-			for grid.Paused {
-				time.Sleep(10 * time.Millisecond)
+			for grid.Paused || grid.NoConnectedUser() {
+				time.Sleep(100 * time.Millisecond)
 			}
 			go func() {
 				grid.Evolve()
@@ -69,23 +65,6 @@ func main() {
 
 	log.Println("listening on", viper.GetString("port"))
 	log.Fatal(http.ListenAndServe(viper.GetString("port"), nil))
-}
-
-func seed() {
-	ps := []life.Point{
-		// blinker
-		life.Point{X: 2, Y: 3},
-		life.Point{X: 3, Y: 3},
-		life.Point{X: 4, Y: 3},
-		// beacon
-		life.Point{X: 7, Y: 2},
-		life.Point{X: 7, Y: 3},
-		life.Point{X: 8, Y: 2},
-		life.Point{X: 9, Y: 5},
-		life.Point{X: 10, Y: 4},
-		life.Point{X: 10, Y: 5},
-	}
-	grid.Activate(ps, life.NewPlayer(nil))
 }
 
 func HandleStatic(w http.ResponseWriter, r *http.Request) {

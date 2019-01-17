@@ -195,6 +195,10 @@ func (g *Grid) PlayerConnected(player Player) bool {
 	return ok
 }
 
+func (g *Grid) NoConnectedUser() bool {
+	return len(g.players) == 0
+}
+
 func (g *Grid) SetPause(pause bool, player Player) {
 	g.Paused = pause
 }
