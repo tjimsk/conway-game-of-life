@@ -1,53 +1,65 @@
 import React from "react"
-import {Cell} from "Components/Cell"
+import styles from "Styles/Grid.scss"
 
-const styles = require("Components/Grid.scss")
-
-class Grid extends React.Component {
+export default class Grid extends React.Component {
 	render() {
-		var rows = []
-		for (var y = 1; y <= this.props.height; y++) {
-			rows.push(y)
-		}
-		var cols = []
-		for (var x = 1; x <= this.props.width; x++) {
-			cols.push(x)
-		}
+		var [rows, cols] = [[], []]
+		for (var y = 1; y <= this.props.height; y++) rows.push(y)			
+		for (var x = 1; x <= this.props.width; x++) cols.push(x)
 
-		return (
-			<div className={styles.grid}>
-				<table className={styles.table}>
-					<tbody>
+		return	<div className={styles.grid}>
+					<div className={styles.gridContainer}>
 						{rows.map((rowId) => {
-							return (
-							<tr key={rowId}>
-								{cols.map((colId) => {
-									return (
-									<Cell key={`${colId}:${rowId}`} 
-										cellId={`${colId}:${rowId}`}
+							return 	<Row key={rowId} 
+										rowId={rowId}
+										cols={cols} 
 										cellRefs={this.props.cellRefs}
-										x={colId}
-										y={rowId}
-										onClickCell={this.props.onClickCell.bind(this)} />)
-								})}
-							</tr>)
+										clickHandler={this.props.onClickCell} />
 						})}
-					</tbody>
-				</table>
-			</div>)
+					</div>
+				</div>
 	}
 
-	// disable updates from parent propagation
 	shouldComponentUpdate(nextProps, nextState) {
-		if (this.props.width * this.props.height == 0) {
-			return true
-		} else {
-			return false
-		}
+		return this.props.width * this.props.height == 0
 	}
 }
 
-export {
-	Grid
+const Row = (props) => {
+	let {cols, rowId, clickHandler, cellRefs} = props
+
+	return 	<div className={styles.row} key={rowId}>
+				{cols.map((colId) => {
+					return 	<Cell key={`${colId}:${rowId}`}
+								cellId={`${colId}:${rowId}`}
+								cellRefs={cellRefs}
+								x={colId}
+								y={rowId}
+								clickHandler={clickHandler.bind(this)} />
+				})}
+			</div>
 }
 
+class Cell extends React.Component {
+	render() {
+		var style = this.state.active ? {
+			backgroundColor: `rgb(${this.state.red},${this.state.green},${this.state.blue})`
+		} : {}
+		return 	<div className={styles.cell}>
+					<div className={styles.cellContainer} 
+						style={style} 
+						onClick={this.props.clickHandler.bind(this, this.props.x, this.props.y)}></div>
+				</div>
+	}
+
+	constructor(props) {
+		super(props)
+		this.state = {
+			active: false,
+			red: 255, 
+			green: 255,
+			blue: 255
+		}		
+		props.cellRefs[props.cellId] = this
+	}
+}

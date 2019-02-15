@@ -29,9 +29,9 @@ func main() {
 	viper.SetDefault("interval", 200)
 	viper.SetDefault("seed", false)
 	viper.SetDefault("port", ":8080")
-	viper.SetDefault("height", 64)
-	viper.SetDefault("width", 120)
-	viper.SetDefault("static", "../../client/dist/")
+	viper.SetDefault("height", 75)
+	viper.SetDefault("width", 90)
+	viper.SetDefault("static", "../../client/dist/development")
 
 	viper.BindEnv("interval")
 	viper.BindEnv("seed")

@@ -1,43 +1,69 @@
 import React from "react"
-import axios from "axios"
-
-import {Toolbox} from "Components/Toolbox"
-import {Toolbar} from "Components/Toolbar"
-import {Grid} from "Components/Grid"
-import {Status} from "Components/Status"
-import {ConnectBackground} from "Components/ConnectBackground"
-
-import {newClient} from "Util/websocket"
-
-const styles = require("Components/App.scss")
+import {Toolbar, ToolbarDrawer, tools} from "Components/Toolbar"
+import Grid from "Components/Grid"
+import Status from "Components/Status"
+import Spinner from "Components/Spinner"
+import websocket from "Util/websocket"
+import styles from "Styles/App.scss"
+import {TransitionGroup, CSSTransition} from "react-transition-group"
 
 class App extends React.Component {
 	render() {
+		let toolbarDrawerTransition = {
+			classNames: {
+				enter: 			styles.toolbarDrawerTransitionEnter,
+				enterActive: 	styles.toolbarDrawerTransitionEnterActive,
+				enterDone: 		styles.toolbarDrawerTransitionEnterDone,
+				exit: 			styles.toolbarDrawerTransitionExit,
+				exitActive: 	styles.toolbarDrawerTransitionExitActive,
+				exitDone: 		styles.toolbarDrawerTransitionExitDone
+			},
+			timeout: 150,
+			in: true
+		}
+
 		return (
 			<div className={styles.app}>
-				{this.state.readyState !== 1 ? <ConnectBackground /> : null}
+				<div className={styles.appContainer}>
+					{this.state.readyState !== 1 ? <Spinner /> : null}
 
-				<Toolbar
-					minInterval={100}
-					maxInterval={2000}
-					paused={this.state.paused}
-					toolbarRef={this.toolbarRef}
-					onClickPauseHandler={this.onClickPauseHandler.bind(this)}
-					onChangeIntervalHandler={this.onChangeIntervalHandler.bind(this)}
-					onClickResetHandler={this.onClickResetHandler.bind(this)}
-					onClickPattern={this.onClickPattern.bind(this)} />
+					<Toolbar
+						minInterval={200}
+						maxInterval={4000}
+						increment={400}
+						interval={this.state.interval}
+						paused={this.state.paused}
+						toolId={this.state.selectedToolIndex}
+						toolbarRef={this.toolbarRef}
+						onClickPauseHandler={this.onClickPauseHandler.bind(this)}
+						onChangeIntervalHandler={this.onChangeIntervalHandler.bind(this)}
+						onClickResetHandler={this.onClickResetHandler.bind(this)}
+						onClickToolsMenuHandler={this.onClickToolsMenuHandler.bind(this)}
+						onClickPattern={this.onClickPattern.bind(this)} />
 
-				<Grid 
-					width={this.state.width}
-					height={this.state.height}
-					cellRefs={this.cellRefs}
-					onClickCell={this.onClickCell.bind(this)} />
+					<Grid 
+						width={this.state.width}
+						height={this.state.height}
+						cellRefs={this.cellRefs}
+						onClickCell={this.onClickCell.bind(this)} />
 
-				<Status
-					player={this.state.player}
-					readyState={this.state.readyState}
-					generation={this.state.generation}
-					dataSizeReceived={this.state.dataSizeReceived} />
+					<Status
+						player={this.state.player}
+						readyState={this.state.readyState}
+						generation={this.state.generation}
+						interval={this.state.interval}
+						dataSizeReceived={this.state.dataSizeReceived} />
+				</div>
+
+				<TransitionGroup className={styles.transitionDiv}>
+					{!this.state.showToolbarDrawer ? null :
+					<CSSTransition {...toolbarDrawerTransition}>
+						<ToolbarDrawer
+							toolId={this.state.selectedToolIndex}
+							onClickToolsMenuHandler={this.onClickToolsMenuHandler.bind(this)}
+							onClickToolsMenuPattern={this.onClickToolsMenuPattern.bind(this)} />
+					</CSSTransition>}
+				</TransitionGroup>
 			</div>)
 	}
 
@@ -58,13 +84,15 @@ class App extends React.Component {
 			player: {name: "", color: {r: 0, g: 0, b: 0}},
 			dataSizeReceived: 0,
 			readyState: -1,
-
+			showToolbarDrawer: false,
+			paused: true,
 			selectedToolIndex: 0,
 		}
 	}
 
+	// websocket
 	createWebsocketConnection() {
-		this.client = newClient()
+		this.client = websocket()
 		this.client.onopen = this.onWebSocketOpen.bind(this)
 		this.client.onclose = this.onWebSocketClose.bind(this)
 		this.client.onmessage = this.onWebSocketMessage.bind(this)
@@ -90,7 +118,7 @@ class App extends React.Component {
 	    if (msg.player != null && Object.keys(msg).length == 1) {
 			this.setState({
 				player: msg.player
-			})    		
+			})
 	    } else if (msg.activeCells != null) {
 	    	this.setState({
 	    		width: msg.width,
@@ -99,30 +127,18 @@ class App extends React.Component {
 	    		dataSizeReceived: size,
 	    		paused: msg.paused,
 	    		interval: msg.interval
-	    	}, this.didReceiveNewState.bind(this, msg))
+	    	}, this.renderGrid.bind(this, msg.activeCells))
 	    } else if (msg.paused != null) {
 	    	this.setState({
 	    		paused: msg.paused,
 	    		pausedBy: msg.player
-	    	}, this.renderToolbar.bind(this))
+	    	})
 	    } else if (msg.interval != null) {
 	    	this.setState({
 	    		interval: msg.interval,
 	    		intervalSetBy: msg.player
-	    	}, this.renderToolbar.bind(this))
+	    	})
 	    }
-	}
-
-	didReceiveNewState(msg) {
-		this.renderToolbar()
-		this.renderGrid(msg.activeCells)
-	}
-
-	renderToolbar() {
-		this.toolbarRef.component.setState({
-			interval: this.state.interval,
-			paused: this.state.paused
-		})
 	}
 
 	renderGrid(nextActiveCellsArr) {
@@ -163,73 +179,79 @@ class App extends React.Component {
 
 	onClickCell(x, y) {
 		var cell = this.cellRefs[`${x}:${y}`]
-		if (cell.state.active && this.toolbarRef.component.state.pattern == -1) {
+		if (cell.state.active && this.state.selectedToolIndex == 0) {
 			console.log("deactivate")
-			axios.post("/deactivate", {
-				point: {x, y},
-				player: this.state.player
-			}).then((response) => {
-				console.log(response)
-			}).catch((err) => {
-				console.log(err.response)
-			})
+			fetch("/deactivate", {
+				method: "POST",
+				body: JSON.stringify({
+					point: {x, y},
+					player: this.state.player
+				})
+			}).catch((err) => console.log(err))
 		} else {
-			var points = this.toolbarRef.component.patternPoints({x, y})
-			axios.post("/activate", {
-				points: points,
-				player: this.state.player
-			}).then((response) => {
-				console.log(response)
-			}).catch((err) => {
-				console.log(err.response)
-			})
+			var points = tools[this.state.selectedToolIndex].func({x,y})
+			fetch("/activate", {
+				method: "POST",
+				body: JSON.stringify({
+					points: points,
+					player: this.state.player
+				})
+			}).catch((err) => console.log(err))
 		}
 	}
 
 	onClickPauseHandler(e) {
-		var currentPauseState = this.toolbarRef.component.state.paused
-		var nextPauseState = !currentPauseState
-		this.toolbarRef.component.setState({
-			paused: nextPauseState
+		let pauseState = !this.state.paused
+		this.setState({
+			paused: pauseState
 		})
-		axios.post("/pause", {
-			player: this.state.player,
-			pause: nextPauseState
-		}).then((response) => {
-			console.log(response)
-		}).catch((err) => {
-			console.log(err.response)
-		})
+		fetch("/pause", {
+			method: "POST",
+			body: JSON.stringify({
+				player: this.state.player,
+				pause: pauseState
+			})
+		}).catch((err) => console.log(err))
 	}
 
-	onChangeIntervalHandler(e) {
-		var interval = e.target.value
-		this.toolbarRef.component.setState({
-			interval: e.target.value
-		})
-		axios.post("/interval", {
-			player: this.state.player,
-			interval: parseInt(interval)
-		}).then((response) => {
-			console.log(response)
-		}).catch((err) => {
-			console.log(err.response)
-		})
+	onChangeIntervalHandler(interval) {
+		interval = interval <= 200 ? 200 : interval
+		interval = interval >= 4000 ? 4000 : interval
+
+		fetch("/interval", {
+			method: "POST",
+			body: JSON.stringify({
+				player: this.state.player,
+				interval: interval
+			})
+		}).catch((err) => console.log(err))
 	}
 
 	onClickResetHandler() {
-		axios.post("/reset", {
-			player: this.state.player
-		}).then((response) => {
-			console.log(response)
-		}).catch((err) => {
-			console.log(err.response)
-		})
+		fetch("/reset", {
+			method: "POST",
+			body: JSON.stringify({
+				player: this.state.player
+			})
+		}).catch((err) => console.log(err))
+	}
+
+	onClickToolsMenuHandler() {
+		this.setState({
+			showToolbarDrawer: !this.state.showToolbarDrawer
+		}, () => console.log(this.state.showToolbarDrawer))
 	}
 
 	onClickPattern(patternId) {
-		this.toolbarRef.component.setState({
-			pattern: this.toolbarRef.component.state.pattern == patternId ? -1 : patternId
+		this.setState({
+			selectedToolIndex: patternId
+		})
+	}
+
+	onClickToolsMenuPattern(patternId) {
+		this.setState({
+			selectedToolIndex: patternId,
+			showToolbarDrawer: false
 		})
 	}
 }

@@ -1,12 +1,8 @@
 var W3CWebSocket = require('websocket').w3cwebsocket;
 
-function newClient() {
+export default function websocket() {
     var websocketAddr = 'ws://'+window.location.host+'/websocket'
     var client = new W3CWebSocket(websocketAddr, 'echo-protocol');
 
     return client
-}
-
-export {
-	newClient
 }

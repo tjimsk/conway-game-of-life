@@ -1,0 +1,73 @@
+html, body {
+	background-color: ghostwhite;
+	margin: 0px;
+	min-height: 100%;
+	font-family: Helvetica Neue;
+	
+	overflow: hidden;
+	position: relative;
+}
+
+.app {	
+	width: 100%;
+	height: 100%;
+}
+
+.app-container {
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+
+	margin: 0em auto;
+
+	display: grid;
+	grid-template-rows: 2.5em calc(100% - 5em) 2.5em;
+	grid-template-columns: 100%;
+	grid-template-areas: 
+		"toolbar"
+		"grid"
+		"statusbar";
+
+	@media only screen and (max-width: 900px) {
+		grid-template-rows: 2.5em calc(100% - 2.5em);
+		grid-template-areas: 
+			"toolbar"
+			"grid";
+	}	
+}
+
+// make the transition modal the same as its parent
+// so it covers the entire viewport
+.transition-div {
+	width: 100%;
+	height: 100%;
+	position: absolute;
+	top: 0;
+	left: 100%;
+}
+
+.toolbar-drawer-transition-enter {
+	transform: translate(0, 0);
+}
+
+.toolbar-drawer-transition-enter-active {
+	transform: translate(-100%, 0);
+	transition: all 150ms ease-in-out;
+}
+
+.toolbar-drawer-transition-enter-done {
+	transform: translate(-100%, 0);
+}
+
+.toolbar-drawer-transition-exit {
+	transform: translate(-100%, 0);
+}
+
+.toolbar-drawer-transition-exit-active {
+	transform: translate(0, 0);
+	transition: all 150ms ease-in-out;
+}
+
+.toolbar-drawer-transition-exit-done {
+	transform: translate(0, 0);
+}

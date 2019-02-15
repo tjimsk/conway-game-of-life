@@ -1,33 +1,31 @@
 import React from "react"
-
-const styles = require("Components/Status.scss")
+import styles from "Styles/Status.scss"
 
 const READYSTATES = {
-	0: "CONNECTING",
-	1: "CONNECTED",
-	2: "CLOSING",
-	3: "CLOSED"
+	0: "Connecting",
+	1: "Connected as",
+	2: "Closing",
+	3: "Closed"
 }
 
-class Status extends React.Component {
-	render() {
-		let playerName = this.props.player.name ? `as ${this.props.player.name}` : ""
+export default props => {
+	let {
+		player,
+		readyState,
+		generation,
+		interval,
+		dataSizeReceived
+	} = props
 
-		return (
-		<div className={styles.status}>
-			<span className={styles.readyState}>
-				{READYSTATES[this.props.readyState] || "DISCONNECTED"} {playerName.toUpperCase()}
-			</span>
-			<span className={styles.generation}>
-				GENERATION #{this.props.generation}
-			</span>
-			<span className={styles.dataSizeReceived}>
-				{this.props.dataSizeReceived} KB
-			</span>
-		</div>)
-	}
-}
+	let kbps = parseFloat(dataSizeReceived) / parseFloat(interval) * 1000
+	kbps = kbps ? `${kbps.toFixed(1)} KB/s` : ""
 
-export {
-	Status
+	return	<div className={styles.status}>
+				<span className={styles.label}>{READYSTATES[readyState] || "Disconnected"}</span>
+				<span className={styles.value}>{player.name}</span>
+				<span className={styles.label}>Generation</span>
+				<span className={styles.value}>#{generation}</span>
+				<span className={styles.value}>{(interval || 0) / 1000}s</span>
+				<span className={styles.value}>{kbps}</span>
+			</div>
 }

@@ -9,10 +9,10 @@ FROM alpine:3.4 as image
 COPY --from=builder /go/bin/game-of-life /go/bin/game-of-life
 COPY client/dist /etc/game-of-life/static
 ENV PORT=:80
-ENV INTERVAL=1000
-ENV HEIGHT=64
-ENV WIDTH=120
-ENV STATIC="/etc/game-of-life/static"
+ENV INTERVAL=600
+ENV HEIGHT=75
+ENV WIDTH=90
+ENV STATIC="/etc/game-of-life/static/production"
 ENV SEED=false
 EXPOSE 80
 ENTRYPOINT /go/bin/game-of-life
