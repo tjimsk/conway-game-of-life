@@ -4,28 +4,27 @@ import styles from "Styles/Toolbar.scss"
 const Toolbar = props => {
 	let {
 		interval,
-		minInterval,
-		maxInterval,
-		increment,
 		toolId, 
 		onChangeIntervalHandler, 
 		onClickResetHandler,
 		onClickToolsMenuHandler,
 		onClickPauseHandler,
-		onClickPattern,
-		paused
+		onClickPattern
 	} = props
 	
+	let speeds = ["0.5x", "1x", "2x", "4x", "8x", "16x"]
+	let intervals = [2000,1000,500,250,120,60]
+	let speed = speeds[intervals.indexOf(interval)]
+	let nextInterval = interval == intervals[intervals.length - 1] ? intervals[0] : intervals[intervals.indexOf(interval) + 1]
+
 	return 	<div className={styles.toolbar}>
 				<div className={styles.toolbarContainer}>
-					<div className={`${styles.slower} ${interval == maxInterval ? styles.disabled : ""}`}
-						onClick={onChangeIntervalHandler.bind(this, interval + increment)}>Slower</div>
-					<div className={`${styles.slower} ${interval == minInterval ? styles.disabled : ""}`}
-						onClick={onChangeIntervalHandler.bind(this, interval - increment)}>Faster</div>
+					<div className={styles.interval}
+						onClick={onChangeIntervalHandler.bind(this, nextInterval)}>{speed}</div>
 
-					<div className={paused ? styles.resume : styles.pause}
-					 	onClick={onClickPauseHandler.bind(this)}>
-					 	{paused ? "Resume" : "Pause"}
+					<div className={interval == -1 ? styles.resume : styles.pause}
+					 	onClick={onChangeIntervalHandler.bind(this, interval == -1 ? 1000 : -1)}>
+					 	{interval == -1 ? "Resume" : "Pause"}
 					</div>
 
 					<div className={styles.reset}
@@ -55,13 +54,13 @@ const ToolbarDrawer = props => {
 
 	return 	<div className={styles.toolbarDrawer}>
 				<div className={styles.toolbarDrawerClose}
-					onClick={onClickToolsMenuHandler.bind(this)}>Done</div>
+					onClick={onClickToolsMenuHandler.bind(this)}>{"\u2715"}</div>
 
 				{tools.map((tool, id) => {
 					let className = `${styles.toolbarDrawerTool} ${toolId == id ? `${styles.selected}` : ""}`
 					return 	<div className={className}
 								onClick={onClickToolsMenuPattern.bind(this, id)}
-								key={id} >{tool.name}</div>
+								key={id} ><span>{tool.name}</span></div>
 				})}
 			</div>
 }

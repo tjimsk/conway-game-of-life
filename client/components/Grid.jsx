@@ -7,14 +7,12 @@ export default class Grid extends React.Component {
 		for (var y = 1; y <= this.props.height; y++) rows.push(y)			
 		for (var x = 1; x <= this.props.width; x++) cols.push(x)
 
+		let {cellRefs, transitionTime, onClickCell} = this.props
+
 		return	<div className={styles.grid}>
 					<div className={styles.gridContainer}>
 						{rows.map((rowId) => {
-							return 	<Row key={rowId} 
-										rowId={rowId}
-										cols={cols} 
-										cellRefs={this.props.cellRefs}
-										clickHandler={this.props.onClickCell} />
+							return 	<Row key={rowId} rowId={rowId} cols={cols} cellRefs={cellRefs} transitionTime={transitionTime} clickHandler={onClickCell} />
 						})}
 					</div>
 				</div>
@@ -26,7 +24,7 @@ export default class Grid extends React.Component {
 }
 
 const Row = (props) => {
-	let {cols, rowId, clickHandler, cellRefs} = props
+	let {cols, rowId, clickHandler, cellRefs, transitionTime} = props
 
 	return 	<div className={styles.row} key={rowId}>
 				{cols.map((colId) => {
@@ -35,6 +33,7 @@ const Row = (props) => {
 								cellRefs={cellRefs}
 								x={colId}
 								y={rowId}
+								transitionTime={transitionTime}
 								clickHandler={clickHandler.bind(this)} />
 				})}
 			</div>
@@ -42,13 +41,14 @@ const Row = (props) => {
 
 class Cell extends React.Component {
 	render() {
-		var style = this.state.active ? {
-			backgroundColor: `rgb(${this.state.red},${this.state.green},${this.state.blue})`
-		} : {}
-		return 	<div className={styles.cell}>
-					<div className={styles.cellContainer} 
-						style={style} 
-						onClick={this.props.clickHandler.bind(this, this.props.x, this.props.y)}></div>
+		let {x, y, clickHandler, transitionTime} = this.props
+		let style = !this.state.active ? {} : {
+			backgroundColor: `rgb(${this.state.red},${this.state.green},${this.state.blue})`,
+			// transition: `background-color ${transitionTime}ms ease-in-out`
+		}
+
+		return 	<div className={styles.cell} onClick={clickHandler.bind(this, x, y)}>
+					<div className={styles.cellContainer} style={style}></div>
 				</div>
 	}
 
