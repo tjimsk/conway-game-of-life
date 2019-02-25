@@ -15,7 +15,7 @@ The result can be found [here](http://life.jimsk.com).  This is the design notes
 
 #### Design Notes
 
-![Design](/assets/conway-design.jpg)
+![Design](http://jimsk.com/assets/conway-design.jpg)
 
 ##### Frontend
 
