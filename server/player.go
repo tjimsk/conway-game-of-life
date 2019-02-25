@@ -41,19 +41,6 @@ func (player Player) ListenMessages() {
 	}
 }
 
-// keep listening on messages sent from the client websocket connection
-// deprecated: client side messages are sent as http requests
-func (player Player) ListenWebsocket() {
-	for {
-		msg := struct{}{}
-		if err := player.conn.ReadJSON(&msg); err != nil {
-			log.Println("ReadJSON:", err)
-			player.DisconnectChan <- true
-			break
-		}
-	}
-}
-
 type Color struct {
 	R int `json:"R"`
 	G int `json:"G"`
@@ -93,8 +80,4 @@ func averageColor(colors []Color) Color {
 		G: g / count,
 		B: b / count,
 	}
-}
-
-func (c Color) String() string {
-	return fmt.Sprintf(`(%v, %v, %v)`, c.R, c.G, c.B)
 }

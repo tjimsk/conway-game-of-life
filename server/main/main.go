@@ -26,37 +26,30 @@ var (
 func main() {
 	log.SetFlags(log.Lshortfile)
 
-	viper.SetDefault("interval", 200)
-	viper.SetDefault("seed", false)
+	viper.SetDefault("interval", 1000)
 	viper.SetDefault("port", ":8080")
-	viper.SetDefault("height", 75)
-	viper.SetDefault("width", 90)
 	viper.SetDefault("static", "../../client/dist/development")
 
 	viper.BindEnv("interval")
-	viper.BindEnv("seed")
 	viper.BindEnv("port")
-	viper.BindEnv("height")
-	viper.BindEnv("width")
 	viper.BindEnv("static")
 
 	// initialize a grid and start evolution loop
-	grid = life.NewGrid(viper.GetInt("width"), viper.GetInt("height"))
+	grid = life.NewGrid(viper.GetInt("interval"))
 	go func() {
 		for {
-			for grid.Paused || grid.NoConnectedUser() {
+			for grid.Interval == -1 || grid.NoConnectedUser() {
 				time.Sleep(100 * time.Millisecond)
 			}
-			go func() {
-				grid.Evolve()
-				grid.PushStateChange()
-			}()
-			time.Sleep(time.Duration(viper.GetInt("interval")) * time.Millisecond)
+
+			grid.Evolve()
+			grid.PushStateChange()
+
+			time.Sleep(time.Duration(grid.Interval) * time.Millisecond)
 		}
 	}()
 
 	http.HandleFunc("/", HandleStatic)
-	http.HandleFunc("/pause", HandlePause)
 	http.HandleFunc("/activate", HandleActivate)
 	http.HandleFunc("/deactivate", HandleDeactivate)
 	http.HandleFunc("/interval", HandleInterval)
@@ -108,25 +101,6 @@ func HandleDeactivate(w http.ResponseWriter, r *http.Request) {
 	if grid.PlayerConnected(msg.Player) {
 		grid.Deactivate(msg.Point, msg.Player)
 		grid.PushStateChange()
-	}
-}
-
-func HandlePause(w http.ResponseWriter, r *http.Request) {
-	log.Printf("HandlePause: %v %v\n", r.Method, r.URL.Path)
-	b, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	msg := life.RequestPauseMessage{}
-	if err := json.Unmarshal(b, &msg); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if grid.PlayerConnected(msg.Player) {
-		grid.SetPause(msg.Pause, msg.Player)
-		grid.PushPauseChange(msg.Player)
 	}
 }
 
@@ -184,6 +158,8 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	player := grid.AddPlayer(conn)
 	defer grid.RemovePlayer(player)
+
+	go player.ListenMessages()
 
 	grid.PushPlayer(player)
 	grid.PushState(player)

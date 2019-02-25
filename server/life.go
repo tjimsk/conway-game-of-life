@@ -6,5 +6,6 @@ import (
 )
 
 func init() {
+	// for random color generation
 	rand.Seed(time.Now().UTC().UnixNano())
 }
